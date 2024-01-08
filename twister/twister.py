@@ -88,7 +88,6 @@ class twstr:
         # making predictions on each patient
         self.patient_collection = predict_patients(self.patient_collection, self.model_details)
    
-        #if save:
             
    
         
@@ -119,6 +118,9 @@ class twstr:
             
         feature_matrix = pd.concat(all_features,ignore_index=True)
         feature_matrix.index = list(all_features.keys())
+        
+        # convert all features to float
+        feature_matrix = feature_matrix.astype(float)
         
         self.feature_matrix = feature_matrix
         

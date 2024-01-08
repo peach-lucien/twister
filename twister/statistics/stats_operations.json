@@ -1,1 +1,1 @@
-{"angle_correlations": true, "angle_symmetry": true, "angle_oscillations": true , "movement_correlations": false, "movement_symmetry": false, "movement_transitions": false }
+{"angle_correlations": true, "angle_symmetry": true, "angle_oscillations": true, "facial_expressions": true, "movement_correlations": true, "movement_symmetry": true, "movement_transitions": true }

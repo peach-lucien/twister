@@ -290,7 +290,6 @@ def load_trained_model(model_path, n_output):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Computation device: {device}")
 
-
     # instantiate model
     cnn_model = model(pretrained=False, requires_grad=False, n_output=n_output)
     cnn_model.eval()

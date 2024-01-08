@@ -19,6 +19,9 @@ class AngleOscillations(OperationClass):
         # perform symmetry operations on the probability of movement
         angle_predictions = pd.concat([u['predictions'] for u in self.twister_predictions['mediapipe']]).reset_index(drop=True)
         
+        feats = ['anteroretrocollis', 'torticollis', 'laterocollis']
+        angle_predictions = angle_predictions[feats]
+        
         if not (~angle_predictions.isna()).any().any():
             self.features['feature_vector'] = None
             return

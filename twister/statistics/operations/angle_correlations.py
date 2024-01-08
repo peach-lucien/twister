@@ -15,6 +15,9 @@ class AngleCorrelations(OperationClass):
         
         angle_predictions = pd.concat([u['predictions'] for u in self.twister_predictions['mediapipe']]).reset_index(drop=True)
         
+        feats = ['anteroretrocollis', 'torticollis', 'laterocollis']
+        angle_predictions = angle_predictions[feats]
+        
         corr = angle_predictions.corr()
         self.features['angle_correlations'] = corr        
         keep = np.triu(np.ones(corr.shape),k=1).astype('bool').reshape(corr.size)

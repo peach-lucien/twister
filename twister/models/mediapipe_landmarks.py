@@ -1,6 +1,15 @@
 import pandas as pd
 from itertools import product
 
+face_landmarks = {4:'nose',
+                    463: 'left_eye_inner',
+                    473: 'left_eye',
+                    263: 'left_eye_outer',
+                    243: 'right_eye_inner',
+                    468: 'right_eye',
+                    33: 'right_eye_outer',
+                    }
+
 hand_landmarks =  {0:'wrist',
                    1:'thumb_cmc',
                    2:'thumb_mcp',
@@ -67,6 +76,7 @@ def prepare_empty_dataframe(hands='both',pose=True,face_mesh=False):
     marker_dictionaries['Left_hand'] = {u: hand_landmarks[u] + '_left' for u in hand_landmarks}
     marker_dictionaries['Right_hand'] = {u: hand_landmarks[u] + '_right' for u in hand_landmarks}
     marker_dictionaries['pose'] = pose_landmarks
+    marker_dictionaries['face'] = face_landmarks
 
     columns = []
     if hands:
@@ -79,6 +89,10 @@ def prepare_empty_dataframe(hands='both',pose=True,face_mesh=False):
             
     if pose:
         columns += [pose_landmarks[u] for u in pose_landmarks]
+        
+    if face_mesh:
+        columns += [face_landmarks[u] for u in face_landmarks]
+        
     
     multi_columns = list(product(columns,['x','y','z','visibility','presence']))
         
