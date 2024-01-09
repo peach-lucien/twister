@@ -50,8 +50,10 @@ def construct_patient(video, patient_id=None):
 
     # extract video file name if not given
     if not patient_id:
-        patient_id = os.path.basename(video[0]).split('_preprocessed')[0]
-        
+        if isinstance(video, list):
+            patient_id = os.path.basename(video[0]).split('_preprocessed')[0]
+        else:
+            patient_id = os.path.basename(video).split('_preprocessed')[0]
     
     # extract video details
     if isinstance(video, list):

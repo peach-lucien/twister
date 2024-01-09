@@ -101,10 +101,10 @@ def predict_single_video(video_details, cnn_model):
     return predictions, probabilities, outputs
 
 
+
 def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
     """ predict score for a single video """
-    
-    
+        
     # load the faceforward mesh
     face_forward = pickle.load(importlib.resources.open_binary("twister.models", "average_face_mask.pkl"))    
 
@@ -130,7 +130,8 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
     #probabilities = []
     #outputs=[]
     
-    for i, frame in enumerate(tqdm( itertools.islice(videogen, n_frames), total=n_frames)):     
+    # loop over each frame in the video
+    for i, frame in enumerate(tqdm(itertools.islice(videogen, n_frames), total=n_frames)):     
         
         # converted for MP format
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
@@ -148,7 +149,7 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
             pose_df, pose_mapping = prepare_empty_dataframe(hands=False, pose=True, face_mesh=False)
 
             # only looping over the first pose (assuming there is only one person in the frame)
-            for l, landmark in enumerate(results_pose.pose_world_landmarks[0]):
+            for l, landmark in enumerate(results_pose.pose_world_landmarks[0]):  # TODO use world or not world landmarks
                 
                 marker = pose_mapping['pose'][l]
                 pose_df.loc[i,(marker,'x')] = landmark.x
@@ -160,7 +161,7 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
 
         # extract face mesh with matching markers to pose
         if results_face.face_landmarks:   
-            face_df, face_mapping = prepare_empty_dataframe(hands=False, pose=False, face_mesh=True)
+            # face_df, face_mapping = prepare_empty_dataframe(hands=False, pose=False, face_mesh=True)
             face_3d = []
             # only looping over the first pose (assuming there is only one person in the frame)
             for idx, landmark in enumerate(results_face.face_landmarks[0]): # l in face_mapping['face'].keys(): 
@@ -168,14 +169,14 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
                 #landmark = results_face.face_landmarks[0][idx]                
                 face_3d.append([landmark.x,landmark.y,landmark.z])                        
                 
-                # find mesh face markers that are also in the pose face markers
-                if idx in face_mapping['face'].keys():
-                    marker = face_mapping['face'][idx]
-                    face_df.loc[i,(marker,'x')] = landmark.x
-                    face_df.loc[i,(marker,'y')] = landmark.y
-                    face_df.loc[i,(marker,'z')] = landmark.z
-                    face_df.loc[i,(marker,'visibility')] = landmark.visibility
-                    face_df.loc[i,(marker,'presence')] = landmark.presence  
+                # # find mesh face markers that are also in the pose face markers
+                # if idx in face_mapping['face'].keys():
+                #     marker = face_mapping['face'][idx]
+                #     face_df.loc[i,(marker,'x')] = landmark.x
+                #     face_df.loc[i,(marker,'y')] = landmark.y
+                #     face_df.loc[i,(marker,'z')] = landmark.z
+                #     face_df.loc[i,(marker,'visibility')] = landmark.visibility
+                #     face_df.loc[i,(marker,'presence')] = landmark.presence  
                 
             # this is the coordinates of the fitted face mesh
             face_3d = np.array(face_3d, dtype=np.float64)             
@@ -197,9 +198,10 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
             plt.figure();
             plt.imshow(annotated_image);plt.title(euler_angles)        
         
-        # plt.scatter(face_forward[:,0], -face_forward[:,1])
-        # plt.scatter(rotated_face_forward[:,0], -rotated_face_forward[:,1])
-        # plt.scatter(face_3d[:,0], -face_3d[:,1])        
+        #plt.figure()
+        #plt.scatter(face_forward[:,0], -face_forward[:,1])
+        #plt.scatter(rotated_face_forward[:,0], -rotated_face_forward[:,1])
+        #plt.scatter(face_3d[:,0], -face_3d[:,1])        
         
         # TODO: use the facial blender predicitons as well
         if results_face.face_blendshapes:   
@@ -251,7 +253,7 @@ def get_head_angle(pose_df, face_forward, face_3d):
     # euler_angles = rot2eul(result.t)*180/np.pi
     euler_angles = rotation_matrix_to_euler_angles(result.t)   
 
-    return euler_angles, angle   
+    return euler_angles, np.rad2deg(angle)   
 
 def rot2eul(R):
     beta = -np.arcsin(R[2,0]) # rotation (head left is positive - from their perspective, and head right is negative)
