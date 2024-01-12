@@ -21,7 +21,7 @@ class MovementSymmetry(OperationClass):
         movement_predictions = pd.concat([u['probabilities'] for u in self.twister_predictions['movement']]).reset_index(drop=True).idxmax(axis=1)
     
         # empty dataframe for storage of symmetries
-        symmetries = pd.DataFrame(columns=['_'.join(u) for u in movement_symmetries],index=[0])
+        symmetries = pd.DataFrame(columns=['symmetry_' + '_'.join(u) for u in movement_symmetries],index=[0])
 
         # loop over symmetry comparisons
         for movement in movement_symmetries:                

@@ -87,8 +87,7 @@ class twstr:
         
         # making predictions on each patient
         self.patient_collection = predict_patients(self.patient_collection, self.model_details)
-   
-            
+             
    
         
     def analyse(self):  
