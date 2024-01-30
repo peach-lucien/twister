@@ -77,7 +77,7 @@ class twstr:
         # get video filenames from path
         videos = get_video_filenames(self.video_path)
         
-        # preprocess videos to 540 x 540 
+        # preprocess videos to reduce size //540 x 540 
         self.video_files = preprocess_videos(videos)
 
 

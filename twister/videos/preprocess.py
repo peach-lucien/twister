@@ -62,26 +62,35 @@ def preprocess_videos(videos):
 
         # read video
         reader = io.vreader(video_path)  
+        #reader = io.FFmpegReader(video_path)
+        #reader = io.vread(video_path)
           
         # extract details
         data = io.ffprobe(video_path)['video']
         rate = data['@r_frame_rate']
         n_frames = np.int(data['@nb_frames'])
         
+        # input dict
+        input_dict={'-r': rate,
+                   '-s':'{}x{}'.format(data['@width'],data['@height'])}
+        
         # create output 
         output_dict = {'-vcodec': 'libx265',
                        '-r': rate,
                        '-crf': '24',
-                       '-vf': "scale=(iw*sar)*max(540.1/(iw*sar)\,540.1/ih):ih*max(540.1/(iw*sar)\,540.1/ih),crop=540:540",
+                       #'-vf': "scale=(iw*sar)*max(540.1/(iw*sar)\,540.1/ih):ih*max(540.1/(iw*sar)\,540.1/ih),crop=540:540",
                        }   
         
         # define writer object
         writer = io.FFmpegWriter(output_filename,
-                                 outputdict=output_dict,)
+                                 inputdict=input_dict,
+                                 outputdict=output_dict,
+                                 verbosity=1)
         
         # write to output file
         for i, frame in tqdm(enumerate(reader), total=n_frames):     
             writer.writeFrame(frame)
+            
          
         # close writer object
         writer.close()   

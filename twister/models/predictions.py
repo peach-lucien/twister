@@ -6,6 +6,7 @@ import pkg_resources
 
 from tqdm import tqdm
 import skvideo
+from skvideo import io
 
 import pandas as pd
 import numpy as np
@@ -117,7 +118,7 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
     fps = int(video_details['fps'])
      
     # videogen = skvideo.io.vreader(video_path)
-    videogen = list(skvideo.io.vreader(video_path))
+    videogen = list(io.vreader(video_path))
     
     # defining a video writer
     #if make_video:
