@@ -39,8 +39,8 @@ class MovementSymmetry(OperationClass):
             
             # store symmetry as a feature
             #self.features['symmetry']['_'.join(movement)] = symmetry
-            symmetries.loc[0,'_'.join(movement)] = symmetry
-            self.features['_'.join(movement)] = symmetry
+            symmetries.loc[0,'symmetry_' + '_'.join(movement)] = symmetry
+            self.features['symmetry_' + '_'.join(movement)] = symmetry
            
         # get movements
         movements = self.twister_predictions['movement'][0]['probabilities'].columns  
