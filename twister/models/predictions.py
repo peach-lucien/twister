@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 
 from twister.models.cnn_model import predict_label, load_trained_model
 from twister.models.mediapipe_landmarks import prepare_empty_dataframe
+from twister.io import save_dataset
 
 from procrustes import rotational, orthogonal, generic
 
@@ -25,8 +26,11 @@ from mediapipe import solutions
 
 import pickle
 
-def predict_patients(patient_collection, model_details):
-
+def predict_patients(tw, save=False):
+    
+    patient_collection = tw.patient_collection
+    model_details = tw.model_details
+    
     # loop over each model
     for model in model_details: 
            
@@ -47,7 +51,9 @@ def predict_patients(patient_collection, model_details):
                     results['predictions'] = predictions #pd.DataFrame(predictions, columns=['anteroretrocollis','rotation','tilt'])
                     
                     patient.twister_predictions[model].append(results)
-                    
+                                
+                if save:
+                    save_dataset(tw,'temp',folder='./')
                     
         # otherwise use standard cnn models
         else:
@@ -77,6 +83,12 @@ def predict_patients(patient_collection, model_details):
                     
                     patient.twister_predictions[model].append(results)
        
+        
+                if save:
+                    save_dataset(tw,'temp',folder='./')
+                    
+    
+    save_dataset(tw,'temp',folder='./')
     
     return patient_collection
 
@@ -327,7 +339,7 @@ def load_mediapipe_models():
                                     running_mode=VisionRunningMode.VIDEO)
     face = FaceLandmarker.create_from_options(options)
     
-    POSE_MODEL = pkg_resources.resource_filename('twister.models.mediapipe_models', 'pose_landmarker_heavy.task')
+    POSE_MODEL = pkg_resources.resource_filename('twister.models.mediapipe_models', 'pose_landmarker_full.task')
     
     # pose detection
     base_options = mp.tasks.BaseOptions(model_asset_path=POSE_MODEL)

@@ -6,7 +6,7 @@ import importlib.resources
 import os
 
 from twister.videos.preprocess import get_video_filenames, preprocess_videos
-from twister.io import construct_patient_collection
+from twister.io import construct_patient_collection, load_dataset
 from twister.models.predictions import predict_patients
 from twister.statistics.statistics import extract
 from twister.plotting.plotting import plot
@@ -82,11 +82,14 @@ class twstr:
 
 
 
-    def predict(self, save=False):  
+    def predict(self, file=None, save=False):  
         """ predicting movements and scores """
+                
+        if file is not None:
+            self = load_dataset(file)
         
         # making predictions on each patient
-        self.patient_collection = predict_patients(self.patient_collection, self.model_details)
+        self.patient_collection = predict_patients(self, save=save)
              
    
         
