@@ -40,8 +40,8 @@ class AngleSymmetry(OperationClass):
             
             # store symmetry as a feature
             #self.features['symmetry']['_'.join(movement)] = symmetry
-            symmetries.loc[0,'symmetry_' + angle] = symmetry
-            self.features['symmetry_' + angle] = symmetry
+            symmetries.loc[0,'symmetry_head_angle_' + angle] = symmetry
+            self.features['symmetry_head_angle_' + angle] = symmetry
            
         mean_shoulder_angle = pd.Series(data=angle_predictions['shoulder_angle'].mean(), index=['mean_shoulder_angle'])
         self.features['shoulder_angle'] = mean_shoulder_angle

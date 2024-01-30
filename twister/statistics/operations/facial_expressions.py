@@ -7,7 +7,6 @@ import numpy as np
 featureclass_name = "FacialExpressions"
 
 
-
 class FacialExpressions(OperationClass):   
     
       
@@ -18,13 +17,17 @@ class FacialExpressions(OperationClass):
         # neutral expression
         feats = ['_neutral']   
         mean_neutral_expression = pd.Series(data=facial_predictions[feats].mean()[0], index=['mean_neutral_expression']) 
+        median_neutral_expression = pd.Series(data=facial_predictions[feats].median()[0], index=['median_neutral_expression']) 
+        std_neutral_expression = pd.Series(data=facial_predictions[feats].std()[0], index=['std_neutral_expression']) 
         self.features['neutral_expression'] = mean_neutral_expression        
         
         
         # brow related features
         feats = ['browDownLeft', 'browDownRight', 'browInnerUp',
                  'browOuterUpLeft', 'browOuterUpRight']
-        mean_brow_expression = pd.Series(data=facial_predictions[feats].mean()[0], index=['mean_brow_expression']) 
+        mean_brow_expression = pd.Series(data=facial_predictions[feats].std().mean(), index=['mean_brow_expression']) 
+        median_brow_expression = pd.Series(data=facial_predictions[feats].median().mean(), index=['median_brow_expression']) 
+        std_brow_expression = pd.Series(data=facial_predictions[feats].std().mean(), index=['std_brow_expression']) 
         self.features['brow_expression'] = mean_brow_expression 
 
         # eye related features
@@ -33,12 +36,15 @@ class FacialExpressions(OperationClass):
                 'eyeLookOutRight', 'eyeLookUpLeft', 'eyeLookUpRight', 'eyeSquintLeft',
                 'eyeSquintRight', 'eyeWideLeft', 'eyeWideRight']
         mean_eye_expression = pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_neutral_expression'])  # mean eye deviation (mean across time)
+        median_eye_expression = pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_neutral_expression'])  # mean eye deviation (mean across time)
+        std_eye_expression = pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_neutral_expression'])  # mean eye deviation (mean across time)
         self.features['eye_expression'] = mean_eye_expression
 
         # jaw related features
-        feats = ['jawForward',
-                 'jawLeft', 'jawOpen', 'jawRight']
+        feats = ['jawForward','jawLeft', 'jawOpen', 'jawRight']
         mean_jaw_expression= pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_jaw_expression']) # mean jaw deviation (mean across time)
+        median_jaw_expression= pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_jaw_expression']) # mean jaw deviation (mean across time)
+        std_jaw_expression= pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_jaw_expression']) # mean jaw deviation (mean across time)
         self.features['jaw_expression'] = mean_jaw_expression
 
         # mouth related features
@@ -51,11 +57,15 @@ class FacialExpressions(OperationClass):
                 'mouthStretchLeft', 'mouthStretchRight', 'mouthUpperUpLeft',
                 'mouthUpperUpRight',]
         mean_mouth_expression = pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_mouth_expression'])
+        median_mouth_expression = pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_mouth_expression'])
+        std_mouth_expression = pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_mouth_expression'])
         self.features['mouth_expression'] = mean_mouth_expression
 
         # nose related features
         feats = ['noseSneerLeft', 'noseSneerRight']
         mean_nose_expression = pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_nose_expression'])
+        median_nose_expression = pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_nose_expression'])
+        std_nose_expression = pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_nose_expression'])
         self.features['nose_expression'] = mean_nose_expression
 
         # right related features
@@ -69,6 +79,8 @@ class FacialExpressions(OperationClass):
                 'mouthSmileRight','mouthStretchRight', 
                 'mouthUpperUpRight', 'noseSneerRight']
         mean_rightward_expression = pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_rightward_expression'])
+        median_rightward_expression = pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_rightward_expression'])
+        std_rightward_expression = pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_rightward_expression'])
         self.features['rightward_expression'] = mean_rightward_expression
 
         # left related features
@@ -82,20 +94,23 @@ class FacialExpressions(OperationClass):
                 'mouthSmileLeft','mouthStretchLeft', 
                 'mouthUpperUpLeft', 'noseSneerLeft']
         mean_leftward_expression = pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_leftward_expression'])
+        median_leftward_expression = pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_leftward_expression'])
+        std_leftward_expression = pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_leftward_expression'])
         self.features['leftward_expression'] = mean_leftward_expression
 
 
         # TODO: add more nuanced features based on expressions
         # oscillations of certain ticks ? 
         
-        self.features['feature_vector'] = pd.DataFrame(pd.concat([mean_neutral_expression,
-                                                                  mean_brow_expression,
-                                                                  mean_eye_expression,
-                                                                  mean_jaw_expression,
-                                                                  mean_mouth_expression,
-                                                                  mean_nose_expression,
-                                                                  mean_rightward_expression,
-                                                                  mean_leftward_expression],axis=0)).T
+        self.features['feature_vector'] = pd.DataFrame(pd.concat([mean_neutral_expression,median_neutral_expression,std_neutral_expression,
+                                                                  mean_brow_expression, median_brow_expression, std_brow_expression,
+                                                                  mean_eye_expression, median_eye_expression, std_eye_expression,
+                                                                  mean_jaw_expression,median_jaw_expression, std_jaw_expression,
+                                                                  mean_mouth_expression,median_mouth_expression, std_mouth_expression,
+                                                                  mean_nose_expression,median_nose_expression, std_nose_expression,
+                                                                  mean_rightward_expression,median_rightward_expression, std_rightward_expression,
+                                                                  mean_leftward_expression,median_leftward_expression, std_leftward_expression
+                                                                  ],axis=0)).T
 
         
         
