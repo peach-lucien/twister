@@ -1,6 +1,6 @@
 import os
 
-import ffmpeg
+from skvideo import io
 import numpy as np
 
 def extract_video_details(video_path):
@@ -14,16 +14,16 @@ def extract_video_details(video_path):
     video_details={}
     
     # probe with ffmpeg
-    probe = ffmpeg.probe(video_path)
+    probe = io.ffprobe(video_path)['video'] #ffmpeg.probe(video_path)
     
     # stream
-    video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+    # video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
     
     # extract info
-    video_details['width'] = int(video_stream['width'])
-    video_details['height'] = int(video_stream['height'])    
-    video_details['n_frames'] = int(video_stream['nb_frames'])    
-    video_details['duration'] = np.float64(video_stream['duration'])
+    video_details['width'] = int(probe['@width'])
+    video_details['height'] = int(probe['@height'])    
+    video_details['n_frames'] = int(probe['@nb_frames'])    
+    video_details['duration'] = np.float64(probe['@duration'])
     video_details['fps'] = video_details['n_frames']/video_details['duration']   
     video_details['path'] = video_path
     

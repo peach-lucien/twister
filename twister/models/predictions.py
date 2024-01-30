@@ -87,7 +87,7 @@ def predict_single_video(video_details, cnn_model):
     video_path = video_details['path']
     n_frames = video_details['n_frames']   
      
-    videogen = skvideo.io.vreader(video_path)
+    videogen = io.vreader(video_path)
 
     predictions = []
     probabilities = []
