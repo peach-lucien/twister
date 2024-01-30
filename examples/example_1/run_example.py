@@ -13,18 +13,20 @@ def main():
     
     # initiate twstr object with path to videos
     #tw = twstr(video_path=data_path,)
-    tw = twstr()
+    #tw = twstr()
     
     #tw.run()
     
     # run main twister function
     
+    tw = twstr(video_path=data_path,)
+    tw.preprocess_videos()
+
+    #video_files = [data_path + 'CRF43_03m_postOP.mp4',
+    #               data_path + 'HEI_31_03m_postOP.mp4',]
+    #tw = twstr(video_files=video_files)
+
     # preprocess videos
-    #tw.preprocess_videos()
-    
-    video_files = [data_path + 'CRF43_03m_postOP.mp4',
-                   data_path + 'HEI_31_03m_postOP.mp4',]
-    tw = twstr(video_files=video_files)
 
     #tw.video_files = video_files
     
