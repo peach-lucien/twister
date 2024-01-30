@@ -225,7 +225,7 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
         #writer.writeFrame(annotated_image)
     
     # combine predictions into a single dataframe
-    predictions = pd.concat([angle_predictions.astype(float),blend_predictions], 1)
+    predictions = pd.concat([angle_predictions.astype(float),blend_predictions], axis=1)
 
     return predictions
 
