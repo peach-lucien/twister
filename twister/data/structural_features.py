@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import scipy as sc
 from scipy import signal
-from neurodsp.spectral import compute_spectrum
 import csv
 import itertools
 import warnings
