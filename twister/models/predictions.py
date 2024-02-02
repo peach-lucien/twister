@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 from twister.models.cnn_model import predict_label, load_trained_model
 from twister.models.mediapipe_landmarks import prepare_empty_dataframe
-from twister.io import save_dataset
+from twister.io import save_dataset, save_csv
 
 from procrustes import rotational, orthogonal, generic
 
@@ -37,13 +37,13 @@ def predict_patients(tw, save=False):
         if model == 'mediapipe':
             
             # loop over each patient
-            for patient in patient_collection:          
+            for i, patient in enumerate(patient_collection):          
                 
                 if not patient.twister_predictions[model]:
                     # create empty list to store predictions for each video
                     patient.twister_predictions[model] = []              
                     
-                    for video in patient.video_details:
+                    for v, video in enumerate(patient.video_details):
                         results = {}
     
                         predictions = predict_single_video_mediapipe( video )
@@ -51,10 +51,17 @@ def predict_patients(tw, save=False):
                         # store all outputs in dictionary
                         results['predictions'] = predictions #pd.DataFrame(predictions, columns=['anteroretrocollis','rotation','tilt'])
                         
-                        patient.twister_predictions[model].append(results)
                                     
-                    if save:
-                        save_dataset(tw,'temp',folder='./')
+                        if save:
+                            #save_dataset(tw,'temp',folder='./')
+                            #save_dataset(patient,'patient_'+str(i), folder='./temp/')
+                            save_csv(predictions,
+                                     patient.patient_id + '_mediapipe_predictions_v{}.csv'.format(v),
+                                     folder='./csv_predictions/')
+                        else:
+                            patient.twister_predictions[model].append(results)
+
+                        
                 else:
                     print('Skipping video for which predictions have already been made')
                     
@@ -72,10 +79,9 @@ def predict_patients(tw, save=False):
                 # create empty list to store predictions for each video
                     patient.twister_predictions[model] = []
           
-                    for video in patient.video_details:
+                    for v, video in enumerate(patient.video_details):
                         # create empty dict for storing results
-                        results = {}
-    
+                        results = {}    
                         
                         # predict video with trained model
                         predictions, probabilities, outputs = predict_single_video( video, cnn)
@@ -85,11 +91,24 @@ def predict_patients(tw, save=False):
                         results['probabilities'] = pd.DataFrame(probabilities, columns=model_details[model]['label_names'])
                         results['outputs'] = pd.DataFrame(outputs, columns=model_details[model]['label_names'])
                         
-                        patient.twister_predictions[model].append(results)
-           
+                        #patient.twister_predictions[model].append(results)           
             
-                    if save:
-                        save_dataset(tw,'temp',folder='./')
+                        if save:
+                            #save_dataset(tw,'temp',folder='./')
+                            #save_dataset(patient,'patient_'+str(i), folder='./temp/')
+                            save_csv(results['predictions'] ,
+                                     patient.patient_id + '_movement_predictions_v{}.csv'.format(v),
+                                     folder='./csv_predictions/')
+                            save_csv(results['probabilities'] ,
+                                     patient.patient_id + '_movement_probabilities_v{}.csv'.format(v),
+                                     folder='./csv_predictions/')
+                            save_csv(results['outputs'] ,
+                                     patient.patient_id + '_movement_outputs_v{}.csv'.format(v),
+                                     folder='./csv_predictions/')
+                        else:
+                            patient.twister_predictions[model].append(results)
+
+                    
                 else:
                     print('Skipping video for which predictions have already been made')
                                     

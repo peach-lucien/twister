@@ -6,6 +6,15 @@ from twister.videos.utils import extract_video_details
 
 
 
+def save_csv(df, filename, folder="./datasets"):
+    """Save a dataset in a pickle."""
+    
+    if not os.path.exists(folder):
+        os.mkdir(folder)
+
+    df.to_csv(folder + filename)
+    
+
 def save_dataset(obj, filename, folder="./datasets"):
     """Save a dataset in a pickle."""
     
