@@ -39,21 +39,24 @@ def predict_patients(tw, save=False):
             # loop over each patient
             for patient in patient_collection:          
                 
-                # create empty list to store predictions for each video
-                patient.twister_predictions[model] = []              
-                
-                for video in patient.video_details:
-                    results = {}
-
-                    predictions = predict_single_video_mediapipe( video )
-
-                    # store all outputs in dictionary
-                    results['predictions'] = predictions #pd.DataFrame(predictions, columns=['anteroretrocollis','rotation','tilt'])
+                if not patient.twister_predictions[model]:
+                    # create empty list to store predictions for each video
+                    patient.twister_predictions[model] = []              
                     
-                    patient.twister_predictions[model].append(results)
-                                
-                if save:
-                    save_dataset(tw,'temp',folder='./')
+                    for video in patient.video_details:
+                        results = {}
+    
+                        predictions = predict_single_video_mediapipe( video )
+    
+                        # store all outputs in dictionary
+                        results['predictions'] = predictions #pd.DataFrame(predictions, columns=['anteroretrocollis','rotation','tilt'])
+                        
+                        patient.twister_predictions[model].append(results)
+                                    
+                    if save:
+                        save_dataset(tw,'temp',folder='./')
+                else:
+                    print('Skipping video for which predictions have already been made')
                     
         # otherwise use standard cnn models
         else:
@@ -65,28 +68,31 @@ def predict_patients(tw, save=False):
             # loop over each patient
             for patient in patient_collection:  
                 
+                if not patient.twister_predictions[model]:
                 # create empty list to store predictions for each video
-                patient.twister_predictions[model] = []
+                    patient.twister_predictions[model] = []
           
-                for video in patient.video_details:
-                    # create empty dict for storing results
-                    results = {}
-
+                    for video in patient.video_details:
+                        # create empty dict for storing results
+                        results = {}
+    
+                        
+                        # predict video with trained model
+                        predictions, probabilities, outputs = predict_single_video( video, cnn)
                     
-                    # predict video with trained model
-                    predictions, probabilities, outputs = predict_single_video( video, cnn)
-                
-                    # store all outputs in dictionary
-                    results['predictions'] = pd.DataFrame(predictions, columns=model_details[model]['label_names'])
-                    results['probabilities'] = pd.DataFrame(probabilities, columns=model_details[model]['label_names'])
-                    results['outputs'] = pd.DataFrame(outputs, columns=model_details[model]['label_names'])
-                    
-                    patient.twister_predictions[model].append(results)
-       
-        
-                if save:
-                    save_dataset(tw,'temp',folder='./')
-                    
+                        # store all outputs in dictionary
+                        results['predictions'] = pd.DataFrame(predictions, columns=model_details[model]['label_names'])
+                        results['probabilities'] = pd.DataFrame(probabilities, columns=model_details[model]['label_names'])
+                        results['outputs'] = pd.DataFrame(outputs, columns=model_details[model]['label_names'])
+                        
+                        patient.twister_predictions[model].append(results)
+           
+            
+                    if save:
+                        save_dataset(tw,'temp',folder='./')
+                else:
+                    print('Skipping video for which predictions have already been made')
+                                    
     
     save_dataset(tw,'temp',folder='./')
     

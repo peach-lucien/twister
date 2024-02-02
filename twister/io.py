@@ -70,6 +70,7 @@ def construct_patient(video, patient_id=None):
                 )
 
     # empty dictionary for prediction results
-    p.twister_predictions = {'movement':None}    
+    p.twister_predictions = {'movement':None,
+                             'mediapipe':None}    
 
     return p
