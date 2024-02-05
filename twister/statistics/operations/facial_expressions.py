@@ -35,9 +35,9 @@ class FacialExpressions(OperationClass):
                 'eyeLookDownRight', 'eyeLookInLeft', 'eyeLookInRight', 'eyeLookOutLeft',
                 'eyeLookOutRight', 'eyeLookUpLeft', 'eyeLookUpRight', 'eyeSquintLeft',
                 'eyeSquintRight', 'eyeWideLeft', 'eyeWideRight']
-        mean_eye_expression = pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_neutral_expression'])  # mean eye deviation (mean across time)
-        median_eye_expression = pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_neutral_expression'])  # mean eye deviation (mean across time)
-        std_eye_expression = pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_neutral_expression'])  # mean eye deviation (mean across time)
+        mean_eye_expression = pd.Series(data=facial_predictions[feats].mean(axis=1).mean(), index=['mean_eye_expression'])  # mean eye deviation (mean across time)
+        median_eye_expression = pd.Series(data=facial_predictions[feats].median(axis=1).mean(), index=['median_eye_expression'])  # mean eye deviation (mean across time)
+        std_eye_expression = pd.Series(data=facial_predictions[feats].std(axis=1).mean(), index=['std_eye_expression'])  # mean eye deviation (mean across time)
         self.features['eye_expression'] = mean_eye_expression
 
         # jaw related features
