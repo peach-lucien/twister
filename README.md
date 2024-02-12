@@ -33,6 +33,47 @@ To receive updates on code releases, please 👀 watch or ⭐️ star this repos
 ``twister`` is an automated computer vision method that tracks the head and pose movements of dytonia patients.
 It can condense complex movements into features that capture disease severity.
 
+# Installation
+
+
+Follow these steps to install [Project Name] on your system.
+
+### Prerequisites
+
+Before you begin, ensure you have met the following requirements:
+- [Python](https://www.python.org/downloads/) 3.6+ (if your project is Python-based)
+- [Git](https://git-scm.com/downloads)
+- Other dependencies...
+
+### Cloning the Repository
+
+To install [Project Name], clone the repository to your local machine:
+
+```bash
+git clone https://github.com/peach-lucien/twister.git
+cd twister
+pip install -e .
+```
+
+Please also download the appropriate models from the dataverse with:
+
+```bash
+python post_install.py
+```
+
+# Demos
+
+Explore the `./examples/` directory to find a variety of examples demonstrating the capabilities and usage of [Project Name]. These examples are designed to help you get started and to showcase the features of the project.
+
+## Getting Started
+
+To run an example, navigate to the `examples` directory and execute the desired script. For instance:
+
+```bash
+cd examples/intro_examples/
+python run_ex_introduction.py
+```
+
 # Reference
 
 - 📄 **Preprint September 2023**:
@@ -40,4 +81,6 @@ It can condense complex movements into features that capture disease severity.
   Steffen Schneider*, Jin Hwa Lee* and Mackenzie Weygandt Mathis
 
 # License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
