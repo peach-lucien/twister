@@ -3,10 +3,11 @@ import pandas as pd
 
 import json
 import importlib.resources
+import glob
 import os
 
 from twister.videos.preprocess import get_video_filenames, preprocess_videos
-from twister.io import construct_patient_collection, load_dataset
+from twister.io import construct_patient_collection, load_dataset, find_video_files
 from twister.models.predictions import predict_patients
 from twister.statistics.statistics import extract
 from twister.plotting.plotting import plot
@@ -38,9 +39,12 @@ class twstr:
         
         if not model_details:
             self.get_model_details_()
+            
+        if self.video_path and not self.video_files:
+            self.video_files = find_video_files(self.video_path)
         
         
-    def run(self, preprocess_videos=True):
+    def run(self, preprocess_videos=False):
         """ main running funciton """
         
         # preprocess the videos in the path
@@ -82,14 +86,20 @@ class twstr:
 
 
 
-    def predict(self, file=None, save=False):  
+    def predict(self, file=None, 
+                save_csv=False,
+                save_object=True,
+                recompute_existing=True,):        
         """ predicting movements and scores """
                 
         if file is not None:
             self = load_dataset(file)
         
         # making predictions on each patient
-        self.patient_collection = predict_patients(self, save=save)
+        self.patient_collection = predict_patients(self, 
+                                                   save_temp_csv=save_csv,
+                                                   save_temp_object=save_object,
+                                                   recompute_existing=True)
              
    
         

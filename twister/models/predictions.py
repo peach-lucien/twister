@@ -18,7 +18,7 @@ from twister.models.cnn_model import predict_label, load_trained_model
 from twister.models.mediapipe_landmarks import prepare_empty_dataframe
 from twister.io import save_dataset, save_csv
 
-from procrustes import rotational, orthogonal, generic
+from procrustes import rotational
 
 import mediapipe as mp
 from mediapipe.framework.formats import landmark_pb2
@@ -26,7 +26,11 @@ from mediapipe import solutions
 
 import pickle
 
-def predict_patients(tw, save=False, csv_folder='./csv_predictions/'):
+def predict_patients(tw,
+                     save_temp_object=False,
+                     save_temp_csv=False,
+                     csv_folder='./csv_predictions/',
+                     recompute_existing=True,):
     
     patient_collection = tw.patient_collection
     model_details = tw.model_details
@@ -45,7 +49,7 @@ def predict_patients(tw, save=False, csv_folder='./csv_predictions/'):
                 for v, video in enumerate(patient.video_details):
                     
                     filename = patient.patient_id + '_mediapipe_predictions_v{}.csv'.format(v)
-                    if not os.path.isfile(csv_folder + filename):
+                    if not os.path.isfile(csv_folder + filename) or recompute_existing:
                         results = {}
     
                         predictions = predict_single_video_mediapipe( video )
@@ -53,15 +57,16 @@ def predict_patients(tw, save=False, csv_folder='./csv_predictions/'):
                         # store all outputs in dictionary
                         results['predictions'] = predictions #pd.DataFrame(predictions, columns=['anteroretrocollis','rotation','tilt'])
                         
-                                    
-                        if save:
-                            #save_dataset(tw,'temp',folder='./')
-                            #save_dataset(patient,'patient_'+str(i), folder='./temp/')
+                        # add predictions
+                        patient.twister_predictions[model].append(results)
+                        
+                        # save files temporarily in case of crash
+                        if save_temp_csv:
                             save_csv(predictions,
                                      patient.patient_id + '_mediapipe_predictions_v{}.csv'.format(v),
                                      folder=csv_folder)
-                        else:
-                            patient.twister_predictions[model].append(results)
+                        elif save_temp_object:
+                            save_dataset(tw,'temp',folder='./')
                     else:
                         print('This video has already been tracked and output as a csv')
 
@@ -82,7 +87,7 @@ def predict_patients(tw, save=False, csv_folder='./csv_predictions/'):
                     for v, video in enumerate(patient.video_details):
                         
                         filename = patient.patient_id + '_movement_outputs_v{}.csv'.format(v)
-                        if not os.path.isfile(csv_folder + filename):
+                        if not os.path.isfile(csv_folder + filename) or recompute_existing:
                         
                             # create empty dict for storing results
                             results = {}    
@@ -95,11 +100,10 @@ def predict_patients(tw, save=False, csv_folder='./csv_predictions/'):
                             results['probabilities'] = pd.DataFrame(probabilities, columns=model_details[model]['label_names'])
                             results['outputs'] = pd.DataFrame(outputs, columns=model_details[model]['label_names'])
                             
-                            #patient.twister_predictions[model].append(results)           
-                
-                            if save:
-                                #save_dataset(tw,'temp',folder='./')
-                                #save_dataset(patient,'patient_'+str(i), folder='./temp/')
+                            patient.twister_predictions[model].append(results)
+                            
+                            # save files temporarily incase of crash
+                            if save_temp_csv:
                                 save_csv(results['predictions'] ,
                                          patient.patient_id + '_movement_predictions_v{}.csv'.format(v),
                                          folder=csv_folder)
@@ -109,14 +113,13 @@ def predict_patients(tw, save=False, csv_folder='./csv_predictions/'):
                                 save_csv(results['outputs'] ,
                                          patient.patient_id + '_movement_outputs_v{}.csv'.format(v),
                                          folder=csv_folder)
-                            else:
-                                patient.twister_predictions[model].append(results)
-                                
+                            elif save_temp_object:
+                                save_dataset(tw,'temp',folder='./')
                                 
                         else:
                             print('This video has already been tracked and output as a csv')
 
-    
+    # saving object at end
     save_dataset(tw,'temp',folder='./')
     
     return patient_collection

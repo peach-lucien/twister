@@ -140,3 +140,15 @@ def construct_patient(video, patient_id=None):
                              'mediapipe':None}    
 
     return p
+
+def find_video_files(directory, extensions=None):
+    if extensions is None:
+        extensions = ['.mp4', '.avi', '.mov', '.wmv', '.mkv', '.MOV']
+    video_files = []
+
+    for item in os.listdir(directory):
+        if os.path.isfile(os.path.join(directory, item)):
+            if any(item.endswith(extension) for extension in extensions):
+                video_files.append(os.path.join(directory, item))
+
+    return video_files

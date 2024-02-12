@@ -1,7 +1,15 @@
 from setuptools import setup, find_packages
+from setuptools.command.install import install
+import os
+import subprocess
 
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
+
+class PostInstallCommand(install):
+    def run(self):
+        install.run(self)
+        subprocess.call(['python', 'post_install.py'])
 
 setup(
     name="twister",
@@ -13,4 +21,9 @@ setup(
     include_package_data=True,  # This line is important
     install_requires=requirements,
     entry_points={"console_scripts": ["twister=twister.app:cli"]},
+    # Your package setup configuration here
+    cmdclass={
+        'install': PostInstallCommand,
+    }
 )
+
