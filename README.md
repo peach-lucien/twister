@@ -78,7 +78,7 @@ python run_ex_introduction.py
 
 - 📄 **Preprint September 2023**:
   [Quantitative assessment of head movement dynamics in dystonia using visual perceptive deep learning: a multi-centre retrospective longitudinal cohort study.](https://www.medrxiv.org/content/10.1101/2023.09.11.23295260v1)
-  Steffen Schneider*, Jin Hwa Lee* and Mackenzie Weygandt Mathis
+  Robert Peach*, Maximilian Friedrich*, ... , Chi Wang Ip.
 
 # License
 
