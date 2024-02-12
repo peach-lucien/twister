@@ -60,6 +60,8 @@ Please also download the appropriate models from the dataverse with:
 ```bash
 python post_install.py
 ```
+Linux users, make sure that the ffmpeg is not installed via Conda. If you have multiple versions of ffmpeg it may point towards the wrong one. You can remove this with:
+```conda remove --force ffmpeg```
 
 # Demos
 
