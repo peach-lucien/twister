@@ -19,8 +19,6 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 [![Twitter Follow](https://shields.io/twitter/follow/RobertPeach15.svg)](https://twitter.com/RobertPeach15)
 
-https://img.shields.io/badge/license-MIT-blue
-
 </div>
 
 # Welcome! 👋
