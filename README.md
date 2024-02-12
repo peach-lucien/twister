@@ -2,7 +2,7 @@
 
 
 <p align="center">
-![plot](./artwork/twister_header.png)
+  <img src="./artwork/twister_header.png" alt="plot">
 </p>
 
 
