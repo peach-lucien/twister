@@ -1,0 +1,9 @@
+numpy
+pandas
+sk-video
+tqdm
+networkx
+matplotlib
+albumentations
+torch
+torchvision
