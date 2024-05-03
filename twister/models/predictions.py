@@ -29,6 +29,9 @@ import pickle
 def predict_patients(tw,
                      save_temp_object=False,
                      save_temp_csv=False,
+                     save_tracking=False,
+                     make_video=False,
+                     video_folder='./tracking/',
                      csv_folder='./csv_predictions/',
                      recompute_existing=True,):
     
@@ -52,7 +55,7 @@ def predict_patients(tw,
                     if not os.path.isfile(csv_folder + filename) or recompute_existing:
                         results = {}
     
-                        predictions = predict_single_video_mediapipe( video )
+                        predictions = predict_single_video_mediapipe( video, make_video=make_video, video_folder=video_folder )
     
                         # store all outputs in dictionary
                         results['predictions'] = predictions #pd.DataFrame(predictions, columns=['anteroretrocollis','rotation','tilt'])
@@ -147,9 +150,9 @@ def predict_single_video(video_details, cnn_model):
 
 
 
-def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
+def predict_single_video_mediapipe(video_details, make_video=False, video_folder='./tracking/', plot=False):
     """ predict score for a single video """
-        
+    
     # load the faceforward mesh
     face_forward = pickle.load(importlib.resources.open_binary("twister.models", "average_face_mask.pkl"))    
 
@@ -165,8 +168,11 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
     videogen = list(io.vreader(video_path))
     
     # defining a video writer
-    #if make_video:
-    #    writer = skvideo.io.FFmpegWriter(output_folder + video_name + '_MPtracked.mp4')
+    if make_video:
+        if not os.path.exists(video_folder):
+            os.makedirs(video_folder)    
+        video_name = video_path.split('/')[-1].split('.')[0]
+        writer = skvideo.io.FFmpegWriter(video_folder + video_name + '_MPtracked.mp4')
 
     # construct empty dataframe for filling with tracking results    
     
@@ -265,9 +271,13 @@ def predict_single_video_mediapipe(video_details, make_video=False, plot=False):
                 annotated_image = draw_pose_landmarks_on_image(annotated_image, results_pose)
 
 
-    # write annotated image to video
-    #if make_video:
-        #writer.writeFrame(annotated_image)
+        # write annotated image to video
+        if make_video:
+            writer.writeFrame(annotated_image)
+    
+    if make_video:            
+        # closing the writer 
+        writer.close()
     
     # combine predictions into a single dataframe
     predictions = pd.concat([angle_predictions.astype(float),blend_predictions], axis=1)

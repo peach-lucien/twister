@@ -44,7 +44,14 @@ class twstr:
             self.video_files = find_video_files(self.video_path)
         
         
-    def run(self, preprocess_videos=False):
+    def run(self, 
+            preprocess_videos=False,
+            make_video=False,
+            video_folder='./tracking/',
+            save_csv=False,
+            save_object=True,
+            recompute_existing=True,
+            ):
         """ main running funciton """
         
         # preprocess the videos in the path
@@ -55,7 +62,12 @@ class twstr:
         self.load_data()
         
         # make deep learning predictions
-        self.predict()
+        self.predict(make_video=make_video,
+                     video_folder=video_folder,
+                     save_csv=save_csv,
+                     save_object=save_object,
+                     recompute_existing=recompute_existing,
+                     )
         
         # compute statistics for each patient
         self.analyse()
@@ -89,6 +101,8 @@ class twstr:
     def predict(self, file=None, 
                 save_csv=False,
                 save_object=True,
+                make_video=False,
+                video_folder='./tracking/',
                 recompute_existing=True,):        
         """ predicting movements and scores """
                 
@@ -99,6 +113,8 @@ class twstr:
         self.patient_collection = predict_patients(self, 
                                                    save_temp_csv=save_csv,
                                                    save_temp_object=save_object,
+                                                   make_video=make_video,
+                                                   video_folder=video_folder,
                                                    recompute_existing=True)
              
    
