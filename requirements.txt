@@ -1,6 +1,5 @@
 numpy
 pandas
-sk-video
 tqdm
 networkx
 matplotlib

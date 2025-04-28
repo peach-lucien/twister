@@ -1,100 +1,84 @@
-
-import numpy as np
-from skvideo import io
-from tqdm import tqdm
 import os
+import cv2
+import numpy as np
+from tqdm import tqdm
 
 def get_video_filenames(directory):
-    """ get all videos in directory """
-    
-    # define video types to search for
-    filetypes = ('.MOV','.mov','.mp4')
+    """ Get all video files in `directory` (recursively). """
+    filetypes = ('.MOV', '.mov', '.mp4')
     video_files = []
-    
-    # search across all sub directories
-    for root, dirs, files in os.walk(directory):        
-        for file in files:                  
-            # only chosen file extensions and not already preprocessed videos
-            if file.endswith(filetypes) and 'preprocessed' not in file:                
-                video_files.append([root, file])  
-                
-    return video_files        
-   
+    for root, _, files in os.walk(directory):
+        for fname in files:
+            if fname.endswith(filetypes) and 'preprocessed' not in fname:
+                video_files.append([root, fname])
+    return video_files
+
 def check_folder(directory):
-    """ make directory if not exist """
+    """ Create `directory` if it doesn’t exist. """
     if not os.path.exists(directory):
         os.makedirs(directory)
-        
+
 def preprocess_videos(videos):
-    """ converting videos to smaller format and cropping """
-    
-    # collect of filenames of processed videos
+    """
+    Convert each video to a smaller/compressed format.
+
+    - Reads with OpenCV
+    - Writes with OpenCV using MPEG-4 (‘mp4v’) codec at the original size/fps
+    - Skips already-processed files
+    """
     output_filenames = []
-    
-    # loop over each video filename
+
     for video_path in videos:
-        
-        # if filename is combination of root and filename then combine
+        # support ['root', 'file'] lists
         if isinstance(video_path, list):
             video_path = os.path.join(*video_path)
-        
-        # get video path info
-        output_folder = os.path.dirname(video_path) + '/preprocessed_videos/'
-        filename = os.path.basename(video_path)
 
-        # define output filename
-        output_filename = output_folder + filename.split('.')[0] + '_preprocessed.MOV'   
-        
-        # sort output filename
+        # prepare output path
+        output_folder   = os.path.join(os.path.dirname(video_path), 'preprocessed_videos')
+        base, _ext      = os.path.splitext(os.path.basename(video_path))
+        output_filename = os.path.join(output_folder, f"{base}_preprocessed.mov")
         output_filenames.append(output_filename)
-        
-        # if file exists then skip
+
+        # skip if already done
         if os.path.isfile(output_filename):
-            print('Output video already exists - not overwriting.')
-            continue 
-        
-        # if already preprocessed file then skip
-        if 'preprocessed' in os.path.split(video_path)[1]:
+            print(f"[skipping] {output_filename} already exists")
             continue
 
-        # create folder if not exist
-        check_folder(output_folder)        
+        if 'preprocessed' in os.path.basename(video_path):
+            continue
 
-        # read video
-        reader = io.vreader(video_path)  
-        #reader = io.FFmpegReader(video_path)
-        #reader = io.vread(video_path)
-          
-        # extract details
-        data = io.ffprobe(video_path)['video']
-        rate = data['@r_frame_rate']
-        n_frames = np.int(data['@nb_frames'])
-        
-        # input dict
-        input_dict={'-r': rate,
-                   '-s':'{}x{}'.format(data['@width'],data['@height'])}
-        
-        # create output 
-        output_dict = {'-vcodec': 'libx265',
-                       '-r': rate,
-                       '-crf': '24',
-                       #'-vf': "scale=(iw*sar)*max(540.1/(iw*sar)\,540.1/ih):ih*max(540.1/(iw*sar)\,540.1/ih),crop=540:540",
-                       }   
-        
-        # define writer object
-        writer = io.FFmpegWriter(output_filename,
-                                 inputdict=input_dict,
-                                 outputdict=output_dict,
-                                 verbosity=1)
-        
-        # write to output file
-        for i, frame in tqdm(enumerate(reader), total=n_frames):     
-            writer.writeFrame(frame)
-            
-         
-        # close writer object
-        writer.close()   
-        
+        check_folder(output_folder)
 
-        
+        # open input
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"[error] cannot open {video_path}")
+            continue
+
+        # grab properties
+        fps      = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        width    = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        # set up writer (MPEG-4)
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter(output_filename, fourcc, fps, (width, height))
+        if not writer.isOpened():
+            print(f"[error] cannot write to {output_filename}")
+            cap.release()
+            continue
+
+        # process frames
+        for _ in tqdm(range(n_frames), desc=f"Processing {os.path.basename(video_path)}"):
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # — here you could resize or crop `frame` if needed —
+            writer.write(frame)
+
+        cap.release()
+        writer.release()
+
     return output_filenames

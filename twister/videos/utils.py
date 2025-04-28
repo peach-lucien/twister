@@ -1,30 +1,38 @@
 import os
-
-from skvideo import io
+import cv2
 import numpy as np
 
 def extract_video_details(video_path):
-    """ extract video details given a path """
+    """Extract video details (width, height, frame count, duration, fps) using OpenCV."""
     
-    # if filename is combination of root and filename then combine
+    # if video_path is provided as a list of parts, join them
     if isinstance(video_path, list):
         video_path = os.path.join(*video_path)
         
-    # empty dictionary to fill with info
-    video_details={}
+    # open video
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise IOError(f"Cannot open video file: {video_path}")
     
-    # probe with ffmpeg
-    probe = io.ffprobe(video_path)['video'] #ffmpeg.probe(video_path)
+    # read properties
+    width     = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height    = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps       = cap.get(cv2.CAP_PROP_FPS)
+    n_frames  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    # stream
-    # video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+    # compute duration; guard against fps=0
+    if fps > 0:
+        duration = n_frames / fps
+    else:
+        duration = float('nan')
     
-    # extract info
-    video_details['width'] = int(probe['@width'])
-    video_details['height'] = int(probe['@height'])    
-    video_details['n_frames'] = int(probe['@nb_frames'])    
-    video_details['duration'] = np.float64(probe['@duration'])
-    video_details['fps'] = video_details['n_frames']/video_details['duration']   
-    video_details['path'] = video_path
+    cap.release()
     
-    return video_details
+    return {
+        'width':    width,
+        'height':   height,
+        'n_frames': n_frames,
+        'duration': np.float64(duration),
+        'fps':      fps,
+        'path':     video_path
+    }
