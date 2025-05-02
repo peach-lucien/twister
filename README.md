@@ -34,7 +34,7 @@ It can condense complex movements into features that capture disease severity.
 # Installation
 
 
-Follow these steps to install [Project Name] on your system.
+Follow these steps to install Twister on your system.
 
 ### Prerequisites
 
@@ -77,7 +77,7 @@ python run_ex_introduction.py
 # Reference
 
 - 📄 **Preprint September 2023**:
-  [Quantitative assessment of head movement dynamics in dystonia using visual perceptive deep learning: a multi-centre retrospective longitudinal cohort study.](https://www.medrxiv.org/content/10.1101/2023.09.11.23295260v1)
+  [Quantitative assessment of head movement dynamics in dystonia using visual perceptive deep learning: a multi-centre retrospective longitudinal cohort study.](https://www.nature.com/articles/s41746-024-01140-6)
   Robert Peach*, Maximilian Friedrich*, ... , Chi Wang Ip.
 
 # License
