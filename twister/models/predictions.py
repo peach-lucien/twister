@@ -1,456 +1,468 @@
-import itertools
-import os
+
+from __future__ import annotations
+
 import importlib
-import pkg_resources
 import pickle
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable, Dict, Iterable, List, Mapping, MutableMapping, Sequence
 
-from tqdm import tqdm
 import cv2
-import pandas as pd
+import mediapipe as mp
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
+from tqdm.auto import tqdm
 
-from twister.models.cnn_model import predict_label, load_trained_model
+from twister.io import save_csv, save_dataset
+from twister.models.cnn_model import load_trained_model, predict_label
 from twister.models.mediapipe_landmarks import prepare_empty_dataframe
-from twister.io import save_dataset, save_csv
-
 from procrustes import rotational
 
-import mediapipe as mp
 from mediapipe.framework.formats import landmark_pb2
-from mediapipe import solutions
+from mediapipe import solutions as mp_solutions
+
+# ─────────────────────────────── data containers ──────────────────────────────
+
+@dataclass(slots=True)
+class VideoMeta:
+    path: Path
+    n_frames: int
+    fps: float
 
 
-def predict_patients(tw,
-                     save_temp_object=False,
-                     save_temp_csv=False,
-                     save_tracking=False,
-                     make_video=False,
-                     video_folder='./tracking/',
-                     csv_folder='./csv_predictions/',
-                     recompute_existing=True):
-    
-    patient_collection = tw.patient_collection
-    model_details = tw.model_details
-    
-    # loop over each model
-    for model in model_details: 
-           
-        if model == 'mediapipe':
-            
-            # loop over each patient
-            for i, patient in enumerate(patient_collection):  
-                
-                # create empty list to store predictions for each video
-                patient.twister_predictions[model] = []              
-                
-                for v, video in enumerate(patient.video_details):
-                    
-                    filename = patient.patient_id + '_mediapipe_predictions_v{}.csv'.format(v)
-                    if not os.path.isfile(os.path.join(csv_folder, filename)) or recompute_existing:
-                        results = {}
-    
-                        predictions = predict_single_video_mediapipe(video, make_video=make_video, video_folder=video_folder)
-    
-                        # store all outputs in dictionary
-                        results['predictions'] = predictions
-                        
-                        # add predictions
-                        patient.twister_predictions[model].append(results)
-                        
-                        # save files temporarily in case of crash
-                        if save_temp_csv:
-                            save_csv(predictions,
-                                     patient.patient_id + '_mediapipe_predictions_v{}.csv'.format(v),
-                                     folder=csv_folder)
-                        elif save_temp_object:
-                            save_dataset(tw, 'temp', folder='./')
-                    else:
-                        print('This video has already been tracked and output as a csv')
-    
-        # otherwise use standard cnn models
-        else:
-        
-            # load trained model
-            model_path = pkg_resources.resource_filename('twister.models.movement_models', 'model_multilabel.pth')
-            cnn = load_trained_model(model_path, model_details[model]['n_output'])
-    
-            # loop over each patient
-            for patient in patient_collection:  
-                
-                if not patient.twister_predictions.get(model, []):
-                    # create empty list to store predictions for each video
-                    patient.twister_predictions[model] = []
-          
-                    for v, video in enumerate(patient.video_details):
-                        
-                        filename = patient.patient_id + '_movement_outputs_v{}.csv'.format(v)
-                        if not os.path.isfile(os.path.join(csv_folder, filename)) or recompute_existing:
-                        
-                            # create empty dict for storing results
-                            results = {}    
-                            
-                            # predict video with trained model
-                            predictions, probabilities, outputs = predict_single_video(video, cnn)
-                        
-                            # store all outputs in dictionary
-                            results['predictions'] = pd.DataFrame(predictions, columns=model_details[model]['label_names'])
-                            results['probabilities'] = pd.DataFrame(probabilities, columns=model_details[model]['label_names'])
-                            results['outputs'] = pd.DataFrame(outputs, columns=model_details[model]['label_names'])
-                            
-                            patient.twister_predictions[model].append(results)
-                            
-                            # save files temporarily in case of crash
-                            if save_temp_csv:
-                                save_csv(results['predictions'],
-                                         patient.patient_id + '_movement_predictions_v{}.csv'.format(v),
-                                         folder=csv_folder)
-                                save_csv(results['probabilities'],
-                                         patient.patient_id + '_movement_probabilities_v{}.csv'.format(v),
-                                         folder=csv_folder)
-                                save_csv(results['outputs'],
-                                         patient.patient_id + '_movement_outputs_v{}.csv'.format(v),
-                                         folder=csv_folder)
-                            elif save_temp_object:
-                                save_dataset(tw, 'temp', folder='./')
-                        else:
-                            print('This video has already been tracked and output as a csv')
-    
-    # saving object at end
-    save_dataset(tw, 'temp', folder='./')
-    
-    return patient_collection
+@dataclass(slots=True)
+class Patient:
+    patient_id: str
+    video_details: List[VideoMeta]
+    twister_predictions: Dict[str, List[pd.DataFrame | dict | None]] = field(
+        default_factory=dict
+    )
 
 
-def predict_single_video(video_details, cnn_model):
-    """Predict score for a single video using a CNN model."""
-    
-    video_path = video_details['path']
-    n_frames = video_details['n_frames']
-    
-    cap = cv2.VideoCapture(video_path)
+# ────────────────────────────── public entrypoint ─────────────────────────────
+
+def run_all_models(
+    tw,
+    *,
+    save_temp_object: bool = False,
+    save_temp_csv: bool = False,
+    make_video: bool | Mapping[str, bool] | Iterable[str] = False,
+    video_folder: Path | str = "./tracking",
+    csv_folder: Path | str = "./csv_predictions",
+    recompute_existing: bool = True,
+):
+    """High‑level orchestration mirroring the original *predict_patients*.
+
+    Accepts both the new :class:`VideoMeta` objects **and** the legacy
+    ``dict`` entries (``{"path": ..., "n_frames": ..., "fps": ...}``).
+    """
+
+    video_folder = Path(video_folder)
+    csv_folder = Path(csv_folder)
+    video_folder.mkdir(parents=True, exist_ok=True)
+    csv_folder.mkdir(parents=True, exist_ok=True)
+
+    # ----------------------------------------------------------------— CNN cache
+    cnn_cache: Dict[str, object] = {}
+    for name, meta in tw.model_details.items():
+        if name == "mediapipe":
+            continue
+        model_path = (
+            importlib.resources.files("twister.models.movement_models")
+            / "model_multilabel.pth"
+        )
+        cnn_cache[name] = load_trained_model(model_path, meta["n_output"])
+
+    # ----------------------------------------------------------------— helpers
+    def _checkpoint():
+        if save_temp_object:
+            save_dataset(tw, "temp", folder="./")
+
+    def _all_exist(paths: Iterable[Path]) -> bool:
+        return all(p.exists() for p in paths)
+
+    # ----------------------------------------------------------------— legacy shim
+    def _to_meta(v) -> VideoMeta:
+        """Convert legacy dicts → :class:`VideoMeta`. Pass through if already ok."""
+        if isinstance(v, VideoMeta):
+            return v
+        if isinstance(v, Mapping):
+            return VideoMeta(path=Path(v["path"]), n_frames=int(v["n_frames"]), fps=float(v["fps"]))
+        raise TypeError("Unsupported video representation: " + repr(v))
+
+    # ----------------------------------------------------------------— main loop
+    for patient in tw.patient_collection:
+        patient.twister_predictions = patient.twister_predictions or {}
+
+        for v_idx, raw_video in enumerate(patient.video_details):
+            video = _to_meta(raw_video)
+
+            for model_name, meta in tw.model_details.items():
+
+                if patient.twister_predictions.get(model_name) is None:
+                    patient.twister_predictions[model_name] = []
+
+                # (a) ─────────────────────────── MEDIAPIPE ────────────────────
+                if model_name == "mediapipe":
+                    outfile = csv_folder / f"{patient.patient_id}_mediapipe_v{v_idx}.csv"
+                    if outfile.exists() and not recompute_existing:
+                        patient.twister_predictions[model_name].append(None)
+                        continue
+
+                    df = predict_single_video_mediapipe(
+                        video,
+                        make_video=make_video,
+                        video_folder=video_folder,
+                    )
+                    patient.twister_predictions[model_name].append(df)
+                    if save_temp_csv:
+                        save_csv(df, outfile.name, folder=csv_folder)
+
+                # (b) ──────────────────────────── CNNs ────────────────────────
+                else:
+                    stem = f"{patient.patient_id}_{model_name}_v{v_idx}"
+                    files = {
+                        "preds": csv_folder / f"{stem}_predictions.csv",
+                        "probs": csv_folder / f"{stem}_probabilities.csv",
+                        "outs":  csv_folder / f"{stem}_outputs.csv",
+                    }
+                    if _all_exist(files.values()) and not recompute_existing:
+                        patient.twister_predictions[model_name].append(None)
+                        continue
+
+                    preds, probs, outs = predict_single_video_cnn(video, cnn_cache[model_name])
+                    result = {
+                        "predictions": pd.DataFrame(preds, columns=meta["label_names"]),
+                        "probabilities": pd.DataFrame(probs, columns=meta["label_names"]),
+                        "outputs": pd.DataFrame(outs, columns=meta["label_names"]),
+                    }
+                    patient.twister_predictions[model_name].append(result)
+
+                    if save_temp_csv:
+                        for k, df in result.items():
+                            save_csv(df, files[k].name, folder=csv_folder)
+            _checkpoint()
+
+    save_dataset(tw, "temp", folder="./")
+    return tw.patient_collection
+
+
+# ──────────────────────────────── predictors ─────────────────────────────────
+
+def predict_single_video_cnn(
+    video: VideoMeta,
+    cnn_model,
+):
+    """Frame‑wise CNN prediction."""
+
+    cap = cv2.VideoCapture(str(video.path))
     if not cap.isOpened():
-        print(f"Error opening video file: {video_path}")
-        return None, None, None
+        raise FileNotFoundError(video.path)
 
-    predictions = []
-    probabilities = []
-    outputs = []
-    
-    for i in tqdm(range(n_frames), total=n_frames, desc="Processing video with CNN"):
-        ret, frame = cap.read()
-        if not ret:
+    preds, probs, outs = [], [], []
+    for _ in tqdm(range(video.n_frames), desc="CNN", leave=False):
+        ok, frame = cap.read()
+        if not ok:
             break
-        out, probs, pred = predict_label(frame, cnn_model)
-        predictions.append(pred)
-        probabilities.append(probs)
-        outputs.append(out)
-        
+        out, prb, pred = predict_label(frame, cnn_model)
+        preds.append(pred)
+        probs.append(prb)
+        outs.append(out)
     cap.release()
-    return predictions, probabilities, outputs
+    return preds, probs, outs
 
 
-def predict_single_video_mediapipe(video_details, make_video=False, video_folder='./tracking/', plot=False):
-    """Predict score for a single video using Mediapipe."""
-    
-    # load the faceforward mesh
-    face_forward = pickle.load(importlib.resources.open_binary("twister.models", "average_face_mask.pkl"))    
+# ════════════════════════════════════════════════════════════════════════════
+#                                   MediaPipe
+# ════════════════════════════════════════════════════════════════════════════
 
-    # load models for tracking with Mediapipe
-    face_mesh, pose, hands = load_mediapipe_models()
-    
-    # get video metadata
-    video_path = video_details['path']
-    n_frames = video_details['n_frames']
-    fps = int(video_details['fps'])
-    
-    cap = cv2.VideoCapture(video_path)
+
+def predict_single_video_mediapipe(
+    video: VideoMeta,
+    *,
+    make_video: bool | Mapping[str, bool] | Iterable[str] = False,
+    video_folder: Path | str = "./tracking",
+    plot: bool = False,
+) -> pd.DataFrame:
+    """Track one video with MediaPipe and return a wide DataFrame."""
+
+    video_on, parts = _parse_video_spec(make_video)
+    face_forward = pickle.load(
+        importlib.resources.open_binary("twister.models", "average_face_mask.pkl")
+    )
+
+    face_mesh, pose, hands = _load_mediapipe_models()
+
+    cap = cv2.VideoCapture(str(video.path))
     if not cap.isOpened():
-        print(f"Error opening video file: {video_path}")
-        return None
-    
-    # Read the first frame to obtain frame dimensions.
-    ret, frame = cap.read()
-    if not ret:
-        print("No frames found in video.")
-        cap.release()
-        return None
-    
-    # If making an output video, initialize writer using first frame dimensions.
-    if make_video:
-        if not os.path.exists(video_folder):
-            os.makedirs(video_folder)
-        video_name = os.path.splitext(os.path.basename(video_path))[0]
-        output_filename = os.path.join(video_folder, video_name + '_MPtracked.mp4')
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        height, width, _ = frame.shape
-        writer = cv2.VideoWriter(output_filename, fourcc, fps, (width, height))
-    
-    # Construct empty dataframes for tracking predictions.
-    angle_predictions = pd.DataFrame(index=range(n_frames), columns=['anteroretrocollis','torticollis','laterocollis','shoulder_angle'])
-    blend_predictions = pd.DataFrame(index=range(n_frames))
-    
-    # If the first frame has been read already, process it and then continue.
-    frame_idx = 0
-    pbar = tqdm(total=n_frames, desc="Processing video with Mediapipe")
-    
-    # Process the first frame.
-    while ret and frame_idx < n_frames:
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        raise FileNotFoundError(video.path)
+    ok, first = cap.read()
+    if not ok:
+        raise RuntimeError("Empty video")
 
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+    # ———————————————————————— writers / placeholders ————————————————————
+    writer = None
+    if video_on:
+        video_folder = Path(video_folder)
+        video_folder.mkdir(parents=True, exist_ok=True)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        h, w, _ = first.shape
+        writer = cv2.VideoWriter(
+            str(video_folder / f"{video.path.stem}_MPtracked.mp4"), fourcc, video.fps, (w, h)
+        )
 
-        # Note: Original code computes frame_ms as fps * i.
-        frame_ms = fps * frame_idx
-        
-        results_face = face_mesh.detect_for_video(mp_image, frame_ms)
-        results_pose = pose.detect_for_video(mp_image, frame_ms)
-        results_hands = hands.detect_for_video(mp_image, frame_ms)
-        
-        # Process pose landmarks.
-        if results_pose.pose_world_landmarks:
-            pose_df, pose_mapping = prepare_empty_dataframe(hands=True, pose=True, face_mesh=False)
-            for l, landmark in enumerate(results_pose.pose_world_landmarks[0]):
-                marker = pose_mapping['pose'][l]
-                pose_df.loc[frame_idx, (marker, 'x')] = landmark.x
-                pose_df.loc[frame_idx, (marker, 'y')] = landmark.y
-                pose_df.loc[frame_idx, (marker, 'z')] = landmark.z
-                pose_df.loc[frame_idx, (marker, 'visibility')] = landmark.visibility
-                pose_df.loc[frame_idx, (marker, 'presence')] = landmark.presence
-        
-        # Process face landmarks.
-        if results_face.face_landmarks:
-            face_3d = []
-            for idx, landmark in enumerate(results_face.face_landmarks[0]):
-                face_3d.append([landmark.x, landmark.y, landmark.z])
-            face_3d = np.array(face_3d, dtype=np.float64)
-            euler_angles, shoulder_angle = get_head_angle(pose_df, face_forward, face_3d)            
-        else: 
-            euler_angles =  [np.nan, np.nan, np.nan]    
-            shoulder_angle = np.nan
-        
-        angle_predictions.loc[frame_idx, ['anteroretrocollis','torticollis','laterocollis']] = euler_angles
-        angle_predictions.loc[frame_idx, 'shoulder_angle'] = shoulder_angle
-        
-        if plot and (frame_idx % 5 == 0):
-            annotated_image = draw_face_landmarks_on_image(frame, results_face)
-            annotated_image = draw_pose_landmarks_on_image(annotated_image, results_pose)
-            plt.figure()
-            plt.imshow(annotated_image)
-            plt.title(str(euler_angles))
-        
-        if results_face.face_blendshapes:
-            for bl in results_face.face_blendshapes[0]:
-                blend_predictions.loc[frame_idx, bl.category_name] = bl.score
-                
-        # If making an output video, annotate the frame and write it.
-        if make_video:
-            annotated_image = frame.copy()
-            if results_face.face_landmarks:
-                annotated_image = draw_face_landmarks_on_image(annotated_image, results_face)
-            if results_pose.pose_world_landmarks:
-                annotated_image = draw_pose_landmarks_on_image(annotated_image, results_pose)
-            if results_hands.hand_landmarks:
-                annotated_image = draw_hand_landmarks_on_image(annotated_image, results_hands)
-            writer.write(annotated_image)
-        
-        frame_idx += 1
-        pbar.update(1)
-        ret, frame = cap.read()
+    tmpl_df, mapping = prepare_empty_dataframe(hands=True, pose=True, face_mesh=False)
+    lm_cols = tmpl_df.columns  # MultiIndex
+    lms = pd.DataFrame(index=range(video.n_frames), columns=lm_cols)
+    angles = pd.DataFrame(
+        index=range(video.n_frames),
+        columns=["anteroretrocollis", "torticollis", "laterocollis", "shoulder_angle"],
+        dtype=float,
+    )
+    blends = pd.DataFrame(index=range(video.n_frames))
     
-    pbar.close()
-    cap.release()
-    if make_video:
-        writer.release()
+    _FIVE = ("x", "y", "z", "visibility", "presence")
     
-    # Combine predictions into a single dataframe.
-    predictions = pd.concat([angle_predictions.astype(float), blend_predictions], axis=1)
-    return predictions
+    # ——————————————————————————————— main loop ————————————————————————————
+    frame = first
+    for i in tqdm(range(video.n_frames), desc="MediaPipe", leave=False):
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        ts = int(i * 1000 / video.fps)
+        res_face = face_mesh.detect_for_video(mp_img, ts)
+        res_pose = pose.detect_for_video(mp_img, ts)
+        res_hands = hands.detect_for_video(mp_img, ts)
+
+        # pose → DataFrame
+        if res_pose.pose_world_landmarks:
+            for idx, lm in enumerate(res_pose.pose_world_landmarks[0]):
+                marker = mapping["pose"][idx]
+                for val, sub in zip((lm.x, lm.y, lm.z, lm.visibility, lm.presence), _FIVE):
+                    if (marker, sub) in lms.columns:
+                        lms.loc[i, (marker, sub)] = val
 
 
-def get_head_angle(pose_df, face_forward, face_3d):
-    """Find head angle relative to face forward."""
-    
-    # get the angle of the shoulders to the horizontal
-    delta_x = (pose_df[('left_shoulder','x')] - pose_df[('right_shoulder','x')]).astype(float).values[0]
-    delta_y = (pose_df[('left_shoulder','y')] - pose_df[('right_shoulder','y')]).astype(float).values[0]
-    angle = -np.arctan2(delta_y, delta_x)
-    
-    # Rotation matrix
-    cos_angle = np.cos(angle)
-    sin_angle = np.sin(angle)
-    rotation_matrix_2d = np.array([[cos_angle, -sin_angle], [sin_angle, cos_angle]])
-    
-    # rotate the face forward mesh
-    rotated_face_forward = np.dot(face_forward[:, :2], rotation_matrix_2d)
-    rotated_face_forward = np.hstack([rotated_face_forward, face_forward[:, 2].reshape(-1, 1)])
-    
-    # compute angle of real mesh to new faceforward
-    result = rotational(rotated_face_forward, face_3d, scale=True, translate=True)
-    euler_angles = rotation_matrix_to_euler_angles(result.t)
-    
-    return euler_angles, np.rad2deg(angle)
+        # hands → DataFrame
+        if res_hands.hand_landmarks:
+            for h_idx, hand in enumerate(res_hands.hand_landmarks):
+                side = _side_from_handedness(res_hands, h_idx)
+                hand_map = mapping[f"{side}_hand"]
+                for p_idx, lm in enumerate(hand):
+                    marker = hand_map[p_idx]
+                    for val, sub in zip((lm.x, lm.y, lm.z, lm.visibility, lm.presence), _FIVE):
+                        if (marker, sub) in lms.columns:
+                            lms.loc[i, (marker, sub)] = val
 
 
-def rot2eul(R):
-    beta = -np.arcsin(R[2, 0])  # rotation (head left is positive)
-    alpha = np.arctan2(R[2, 1] / np.cos(beta), R[2, 2] / np.cos(beta))
-    gamma = np.arctan2(R[1, 0] / np.cos(beta), R[0, 0] / np.cos(beta))
-    return np.array((alpha, beta, gamma))
-
-
-def rotation_matrix_to_euler_angles(R):
-    epsilon = 1e-6
-
-    if abs(R[2, 0]) != 1:
-        theta1 = -np.arcsin(R[2, 0])
-        theta2 = np.pi - theta1
-
-        psi1 = np.arctan2(R[2, 1] / np.cos(theta1), R[2, 2] / np.cos(theta1))
-        psi2 = np.arctan2(R[2, 1] / np.cos(theta2), R[2, 2] / np.cos(theta2))
-
-        phi1 = np.arctan2(R[1, 0] / np.cos(theta1), R[0, 0] / np.cos(theta1))
-        phi2 = np.arctan2(R[1, 0] / np.cos(theta2), R[0, 0] / np.cos(theta2))
-
-        A = np.array([psi1, theta1, phi1]) * 180 / np.pi
-        B = np.array([psi2, theta2, phi2]) * 180 / np.pi
-        
-        solutions = [A, B]        
-        solution = solutions[np.argmin(np.abs(np.sum(solutions, axis=1)))]
-        
-        return solution
-    else:
-        phi = 0
-        if R[2, 0] == -1:
-            theta = np.pi / 2
-            psi = phi + np.arctan2(R[1, 2], R[1, 1])
+        # head & shoulders
+        if res_face.face_landmarks:
+            face_3d = np.array(
+                [[lm.x, lm.y, lm.z] for lm in res_face.face_landmarks[0]], dtype=float
+            )
+            eul, shoulder = _get_head_angle(lms.loc[[i]], face_forward, face_3d)
         else:
-            theta = -np.pi / 2
-            psi = -phi + np.arctan2(-R[1, 2], -R[1, 1])
-        return np.array([psi, theta, phi]) * 180 / np.pi
+            eul, shoulder = [np.nan, np.nan, np.nan], np.nan
+        angles.loc[i, ["anteroretrocollis", "torticollis", "laterocollis"]] = eul
+        angles.loc[i, "shoulder_angle"] = shoulder
+
+        # blendshapes
+        if res_face.face_blendshapes:
+            for bs in res_face.face_blendshapes[0]:
+                blends.loc[i, bs.category_name] = bs.score
+
+        # drawing
+        if video_on or (plot and i % 5 == 0):
+            img = frame.copy()
+            if parts["face"] and res_face.face_landmarks:
+                img = _draw_face(img, res_face)
+            if parts["pose"] and res_pose.pose_landmarks:
+                img = _draw_pose(img, res_pose)
+            if parts["hands"] and res_hands.hand_landmarks:
+                img = _draw_hands(img, res_hands)
+            if plot and i % 5 == 0:
+                import matplotlib.pyplot as plt
+
+                plt.figure(); plt.imshow(img); plt.title(str(eul))
+            if video_on:
+                writer.write(img)
+
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+    cap.release()
+    if writer:
+        writer.release()
+
+    return pd.concat([angles, blends, lms], axis=1)
 
 
-def load_mediapipe_models():
-    
-    HAND_MODEL = pkg_resources.resource_filename('twister.models.mediapipe_models', 'hand_landmarker.task')
-    VisionRunningMode = mp.tasks.vision.RunningMode
-    
-    # Hand detection
-    base_options = mp.tasks.BaseOptions(model_asset_path=HAND_MODEL)
-    HandLandmarker = mp.tasks.vision.HandLandmarker
-    HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
-    options = HandLandmarkerOptions(base_options=base_options,
-                                    num_hands=2,
-                                    min_hand_detection_confidence=0.1,
-                                    min_hand_presence_confidence=0.1,
-                                    min_tracking_confidence=0.1,
-                                    running_mode=VisionRunningMode.VIDEO)
-    
-    hands = HandLandmarker.create_from_options(options)
-    
-    FACE_MODEL = pkg_resources.resource_filename('twister.models.mediapipe_models', 'face_landmarker.task')
-    VisionRunningMode = mp.tasks.vision.RunningMode
-    base_options = mp.tasks.BaseOptions(model_asset_path=FACE_MODEL)
-    FaceLandmarker = mp.tasks.vision.FaceLandmarker
-    FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-           
-    options = FaceLandmarkerOptions(base_options=base_options,
-                                    num_faces=1,
-                                    min_face_detection_confidence=0,
-                                    min_face_presence_confidence=0,
-                                    min_tracking_confidence=0,
-                                    output_face_blendshapes=True,
-                                    running_mode=VisionRunningMode.VIDEO)
-    
-    face = FaceLandmarker.create_from_options(options)
-    
-    POSE_MODEL = pkg_resources.resource_filename('twister.models.mediapipe_models', 'pose_landmarker_heavy.task')
-    base_options = mp.tasks.BaseOptions(model_asset_path=POSE_MODEL)
-    PoseLandmarker = mp.tasks.vision.PoseLandmarker
-    PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
-    options = PoseLandmarkerOptions(base_options=base_options,
-                                    running_mode=VisionRunningMode.VIDEO)
-  
-    pose = PoseLandmarker.create_from_options(options)    
-    
+# ─────────────────────────────── helper utils ────────────────────────────────
+
+def _parse_video_spec(spec: bool | Mapping[str, bool] | Iterable[str]):
+    default = {"face": True, "pose": True, "hands": True}
+    if not spec:
+        return False, {}
+    if spec is True:
+        return True, default
+    if isinstance(spec, Mapping):
+        return True, {k: bool(spec.get(k, False)) for k in default}
+    return True, {k: k in spec for k in default}
+
+
+def _load_mediapipe_models():
+    """Return (face, pose, hands) landmarker objects."""
+    Vision = mp.tasks.vision
+    rm = Vision.RunningMode.VIDEO
+
+    def _task_path(fname: str) -> Path:
+        return Path(importlib.resources.files("twister.models.mediapipe_models")) / fname
+
+    # hands
+    hand_opts = Vision.HandLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=_task_path("hand_landmarker.task")),
+        num_hands=2,
+        running_mode=rm,
+        min_hand_detection_confidence=0.5,
+        min_hand_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+    hands = Vision.HandLandmarker.create_from_options(hand_opts)
+
+    # face
+    face_opts = Vision.FaceLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=_task_path("face_landmarker.task")),
+        num_faces=1,
+        running_mode=rm,
+        output_face_blendshapes=True,
+        min_face_detection_confidence=0.5,
+        min_face_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+    face = Vision.FaceLandmarker.create_from_options(face_opts)
+
+    # pose
+    pose_opts = Vision.PoseLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=_task_path("pose_landmarker_heavy.task")),
+        num_poses=1,
+        running_mode=rm,
+        min_pose_detection_confidence=0.5,
+        min_pose_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+    pose = Vision.PoseLandmarker.create_from_options(pose_opts)
+
     return face, pose, hands
 
 
-def draw_face_landmarks_on_image(rgb_image, detection_result):
-    face_landmarks_list = detection_result.face_landmarks
-    annotated_image = np.copy(rgb_image)
-    
-    # Loop through each detected face.
-    for idx in range(len(face_landmarks_list)):
-        face_landmarks = face_landmarks_list[idx]
-          
-        # Draw the face landmarks.
-        face_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-        face_landmarks_proto.landmark.extend([
-            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in face_landmarks
-        ])
-          
-        solutions.drawing_utils.draw_landmarks(
-            image=annotated_image,
-            landmark_list=face_landmarks_proto,
-            connections=mp.solutions.face_mesh.FACEMESH_TESSELATION,
-            landmark_drawing_spec=None,
-            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_tesselation_style())
-        
-        solutions.drawing_utils.draw_landmarks(
-            image=annotated_image,
-            landmark_list=face_landmarks_proto,
-            connections=mp.solutions.face_mesh.FACEMESH_CONTOURS,
-            landmark_drawing_spec=None,
-            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_contours_style())
-        
-        solutions.drawing_utils.draw_landmarks(
-            image=annotated_image,
-            landmark_list=face_landmarks_proto,
-            connections=mp.solutions.face_mesh.FACEMESH_IRISES,
-            landmark_drawing_spec=None,
-            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_iris_connections_style())
-    
-    return annotated_image
+# --- drawing wrappers --------------------------------------------------------
 
 
-def draw_pose_landmarks_on_image(rgb_image, detection_result):
-    pose_landmarks_list = detection_result.pose_landmarks
-    annotated_image = np.copy(rgb_image)
-    
-    # Loop through each detected pose.
-    for idx in range(len(pose_landmarks_list)):
-        pose_landmarks = pose_landmarks_list[idx]
-        
-        pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-        pose_landmarks_proto.landmark.extend([
-            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_landmarks
-        ])
-        solutions.drawing_utils.draw_landmarks(
-            annotated_image,
-            pose_landmarks_proto,
-            solutions.pose.POSE_CONNECTIONS,
-            solutions.drawing_styles.get_default_pose_landmarks_style())
-        
-    return annotated_image
+def _draw_face(img, res):
+    anno = img.copy()
+    for lms in res.face_landmarks:
+        proto = landmark_pb2.NormalizedLandmarkList()
+        proto.landmark.extend([landmark_pb2.NormalizedLandmark(x=l.x, y=l.y, z=l.z) for l in lms])
+        mp_solutions.drawing_utils.draw_landmarks(
+            anno, proto, mp.solutions.face_mesh.FACEMESH_TESSELATION,
+            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_tesselation_style(),
+        )
+        mp_solutions.drawing_utils.draw_landmarks(
+            anno, proto, mp.solutions.face_mesh.FACEMESH_CONTOURS,
+            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_contours_style(),
+        )
+        mp_solutions.drawing_utils.draw_landmarks(
+            anno, proto, mp.solutions.face_mesh.FACEMESH_IRISES,
+            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_iris_connections_style(),
+        )
+    return anno
 
 
-def draw_hand_landmarks_on_image(rgb_image, detection_result):
-    hand_landmarks_list = detection_result.hand_landmarks
-    annotated_image = np.copy(rgb_image)
-    
-    # Loop through each detected hand.
-    for idx in range(len(hand_landmarks_list)):
-        hand_landmarks = hand_landmarks_list[idx]
-        
-        hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-        hand_landmarks_proto.landmark.extend([
-            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in hand_landmarks
-        ])
-        solutions.drawing_utils.draw_landmarks(
-            annotated_image,
-            hand_landmarks_proto,
-            solutions.hands.HAND_CONNECTIONS,
-            solutions.drawing_styles.get_default_hand_landmarks_style())
-        
-    return annotated_image
+def _draw_pose(img, res):
+    """Pretty pose overlay (MediaPipe default colours)."""
+    anno = img.copy()
+    for lms in res.pose_landmarks:
+        proto = landmark_pb2.NormalizedLandmarkList()
+        proto.landmark.extend(
+            landmark_pb2.NormalizedLandmark(x=l.x, y=l.y, z=l.z) for l in lms
+        )
+
+        mp_solutions.drawing_utils.draw_landmarks(
+            image=anno,
+            landmark_list=proto,
+            connections=mp.solutions.pose.POSE_CONNECTIONS,
+            landmark_drawing_spec=mp_solutions.drawing_styles.get_default_pose_landmarks_style(),
+        )
+    return anno
+
+
+def _draw_hands(img, res):
+    """Pretty hand overlay (MediaPipe default colours)."""
+    anno = img.copy()
+    for hand_lms in res.hand_landmarks:
+        proto = landmark_pb2.NormalizedLandmarkList()
+        proto.landmark.extend(
+            landmark_pb2.NormalizedLandmark(x=l.x, y=l.y, z=l.z) for l in hand_lms
+        )
+
+        mp_solutions.drawing_utils.draw_landmarks(
+            image=anno,
+            landmark_list=proto,
+            connections=mp.solutions.hands.HAND_CONNECTIONS,
+            landmark_drawing_spec=mp_solutions.drawing_styles.get_default_hand_landmarks_style(),
+            connection_drawing_spec=mp_solutions.drawing_styles.get_default_hand_connections_style(),  # ✔︎ :contentReference[oaicite:1]{index=1}
+        )
+    return anno
+
+
+# --- maths -------------------------------------------------------------------
+
+def _get_head_angle(pose_row: pd.DataFrame, face_forward: np.ndarray, face_3d: np.ndarray):
+    cols = [
+        ("left_shoulder", "x"), ("left_shoulder", "y"),
+        ("right_shoulder", "x"), ("right_shoulder", "y"),
+    ]
+    try:
+        if not pose_row[cols].isna().any().any():
+            dx = (pose_row[cols[0]] - pose_row[cols[2]]).astype(float).iat[0]
+            dy = (pose_row[cols[1]] - pose_row[cols[3]]).astype(float).iat[0]
+            ang = -np.arctan2(dy, dx)
+            R2 = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
+            rot_ff = np.hstack([face_forward[:, :2] @ R2, face_forward[:, 2:]])
+            shoulder_deg = np.rad2deg(ang)
+        else:
+            raise ValueError
+    except Exception:
+        rot_ff = face_forward.copy()
+        shoulder_deg = np.nan
+    rigid = rotational(rot_ff, face_3d, scale=True, translate=True)
+    eul = _rotation_matrix_to_euler(rigid.t)
+    return eul, shoulder_deg
+
+
+def _rotation_matrix_to_euler(R: np.ndarray) -> np.ndarray:
+    if abs(R[2, 0]) != 1.0:
+        theta1 = -np.arcsin(R[2, 0])
+        theta2 = np.pi - theta1
+        psi1 = np.arctan2(R[2, 1] / np.cos(theta1), R[2, 2] / np.cos(theta1))
+        psi2 = np.arctan2(R[2, 1] / np.cos(theta2), R[2, 2] / np.cos(theta2))
+        phi1 = np.arctan2(R[1, 0] / np.cos(theta1), R[0, 0] / np.cos(theta1))
+        phi2 = np.arctan2(R[1, 0] / np.cos(theta2), R[0, 0] / np.cos(theta2))
+        sols = np.array([[psi1, theta1, phi1], [psi2, theta2, phi2]]) * 180 / np.pi
+        return sols[np.argmin(np.abs(sols.sum(axis=1)))]
+    phi = 0.0
+    if R[2, 0] == -1.0:
+        theta = np.pi / 2
+        psi = phi + np.arctan2(R[1, 2], R[1, 1])
+    else:
+        theta = -np.pi / 2
+        psi = -phi + np.arctan2(-R[1, 2], -R[1, 1])
+    return np.array([psi, theta, phi]) * 180 / np.pi
+
+
+# --- misc ---------------------------------------------------------------------
+
+def _side_from_handedness(result, idx: int) -> str:
+    if result.handedness and len(result.handedness) > idx:
+        return result.handedness[idx][0].category_name.capitalize()
+    return "Left" if idx == 0 else "Right"

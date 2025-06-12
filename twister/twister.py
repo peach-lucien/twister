@@ -8,7 +8,7 @@ import os
 
 from twister.videos.preprocess import get_video_filenames, preprocess_videos
 from twister.io import construct_patient_collection, load_dataset, find_video_files
-from twister.models.predictions import predict_patients
+from twister.models.predictions import run_all_models
 from twister.statistics.statistics import extract
 from twister.plotting.plotting import plot
 
@@ -110,7 +110,7 @@ class twstr:
             self = load_dataset(file)
         
         # making predictions on each patient
-        self.patient_collection = predict_patients(self, 
+        self.patient_collection = run_all_models(self, 
                                                    save_temp_csv=save_csv,
                                                    save_temp_object=save_object,
                                                    make_video=make_video,
