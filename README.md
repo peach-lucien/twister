@@ -34,7 +34,7 @@ It can condense complex movements into features that capture disease severity.
 # Installation
 
 
-Follow these steps to install [Project Name] on your system.
+Follow these steps to install Twister on your system.
 
 ### Prerequisites
 
@@ -53,11 +53,8 @@ cd twister
 pip install -e .
 ```
 
-Please also download the appropriate models from the dataverse with:
+Please also download the appropriate models from the Medipipe website
 
-```bash
-python post_install.py
-```
 Linux users, make sure that the ffmpeg is not installed via Conda. If you have multiple versions of ffmpeg it may point towards the wrong one. You can remove this with:
 ```conda remove --force ffmpeg```
 
