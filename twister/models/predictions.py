@@ -1,11 +1,10 @@
-
 from __future__ import annotations
 
 import importlib
 import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Mapping, MutableMapping, Sequence
+from typing import Dict, Iterable, List, Mapping
 
 import cv2
 import mediapipe as mp
@@ -20,6 +19,7 @@ from procrustes import rotational
 
 from mediapipe.framework.formats import landmark_pb2
 from mediapipe import solutions as mp_solutions
+
 
 # ─────────────────────────────── data containers ──────────────────────────────
 
@@ -47,20 +47,34 @@ def run_all_models(
     save_temp_object: bool = False,
     save_temp_csv: bool = False,
     make_video: bool | Mapping[str, bool] | Iterable[str] = False,
-    video_folder: Path | str = "./tracking",
-    csv_folder: Path | str = "./csv_predictions",
+    tracking_folder: Path | str | None = None,
+    csv_folder: Path | str | None = None,
     recompute_existing: bool = True,
 ):
-    """High‑level orchestration mirroring the original *predict_patients*.
+    """
+    High-level orchestration.
 
-    Accepts both the new :class:`VideoMeta` objects **and** the legacy
-    ``dict`` entries (``{"path": ..., "n_frames": ..., "fps": ...}``).
+    - `tracking_folder` and `csv_folder`:
+        * If provided, they are used.
+        * Otherwise we try to use `tw.tracking_dir` / `tw.csv_dir` (set by the refactored `twstr`).
+        * As a final fallback we use `./outputs/tracking` and `./outputs/csv`.
     """
 
-    video_folder = Path(video_folder)
-    csv_folder = Path(csv_folder)
-    video_folder.mkdir(parents=True, exist_ok=True)
+
+    # Resolve output dirs with sensible fallbacks
+    default_root = Path(getattr(tw, "output_path", Path("./outputs"))).resolve()
+    tracking_folder = Path(
+        tracking_folder if tracking_folder is not None else getattr(tw, "tracking_dir", default_root / "tracking")
+    )
+    csv_folder = Path(
+        csv_folder if csv_folder is not None else getattr(tw, "csv_dir", default_root / "csv")
+    )
+    tracking_folder.mkdir(parents=True, exist_ok=True)
     csv_folder.mkdir(parents=True, exist_ok=True)
+
+    # Where to drop periodic checkpoints
+    artifacts_dir = Path(getattr(tw, "output_path", Path("."))) / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------------— CNN cache
     cnn_cache: Dict[str, object] = {}
@@ -68,22 +82,19 @@ def run_all_models(
         if name == "mediapipe":
             continue
         model_path = (
-            importlib.resources.files("twister.models.movement_models")
-            / "model_multilabel.pth"
+            importlib.resources.files("twister.models.movement_models") / "model_multilabel.pth"
         )
         cnn_cache[name] = load_trained_model(model_path, meta["n_output"])
 
     # ----------------------------------------------------------------— helpers
     def _checkpoint():
         if save_temp_object:
-            save_dataset(tw, "temp", folder="./")
+            save_dataset(tw, "temp", folder=str(artifacts_dir))
 
     def _all_exist(paths: Iterable[Path]) -> bool:
-        return all(p.exists() for p in paths)
+        return all(Path(p).exists() for p in paths)
 
-    # ----------------------------------------------------------------— legacy shim
     def _to_meta(v) -> VideoMeta:
-        """Convert legacy dicts → :class:`VideoMeta`. Pass through if already ok."""
         if isinstance(v, VideoMeta):
             return v
         if isinstance(v, Mapping):
@@ -105,31 +116,44 @@ def run_all_models(
                 # (a) ─────────────────────────── MEDIAPIPE ────────────────────
                 if model_name == "mediapipe":
                     outfile = csv_folder / f"{patient.patient_id}_mediapipe_v{v_idx}.csv"
+
                     if outfile.exists() and not recompute_existing:
-                        patient.twister_predictions[model_name].append(None)
+                        # LOAD existing CSV back into the object
+                        df = pd.read_csv(outfile, index_col=0)
+                        patient.twister_predictions[model_name].append({
+                                                                        "predictions": df,
+                                                                        })
                         continue
 
+                    # Otherwise compute and optionally save
                     df = predict_single_video_mediapipe(
                         video,
                         make_video=make_video,
-                        video_folder=video_folder,
+                        tracking_folder=tracking_folder,
                     )
-                    patient.twister_predictions[model_name].append(df)
+                    result = {
+                        "predictions": df,
+                    }
+                    patient.twister_predictions[model_name].append(result)
                     if save_temp_csv:
-                        save_csv(df, outfile.name, folder=csv_folder)
+                        save_csv(df, outfile.name, folder=str(csv_folder))
 
                 # (b) ──────────────────────────── CNNs ────────────────────────
                 else:
                     stem = f"{patient.patient_id}_{model_name}_v{v_idx}"
                     files = {
-                        "preds": csv_folder / f"{stem}_predictions.csv",
-                        "probs": csv_folder / f"{stem}_probabilities.csv",
-                        "outs":  csv_folder / f"{stem}_outputs.csv",
+                        "predictions": csv_folder / f"{stem}_predictions.csv",
+                        "probabilities": csv_folder / f"{stem}_probabilities.csv",
+                        "outputs":      csv_folder / f"{stem}_outputs.csv",
                     }
+
                     if _all_exist(files.values()) and not recompute_existing:
-                        patient.twister_predictions[model_name].append(None)
+                        # LOAD the three CSVs back into the object
+                        result = {k: pd.read_csv(path, index_col=0) for k, path in files.items()}
+                        patient.twister_predictions[model_name].append(result)
                         continue
 
+                    # Otherwise compute and optionally save
                     preds, probs, outs = predict_single_video_cnn(video, cnn_cache[model_name])
                     result = {
                         "predictions": pd.DataFrame(preds, columns=meta["label_names"]),
@@ -140,10 +164,12 @@ def run_all_models(
 
                     if save_temp_csv:
                         for k, df in result.items():
-                            save_csv(df, files[k].name, folder=csv_folder)
+                            save_csv(df, files[k].name, folder=str(csv_folder))
+
             _checkpoint()
 
-    save_dataset(tw, "temp", folder="./")
+    # final checkpoint
+    save_dataset(tw, "temp", folder=str(artifacts_dir))
     return tw.patient_collection
 
 
@@ -153,8 +179,7 @@ def predict_single_video_cnn(
     video: VideoMeta,
     cnn_model,
 ):
-    """Frame‑wise CNN prediction."""
-
+    """Frame-wise CNN prediction."""
     cap = cv2.VideoCapture(str(video.path))
     if not cap.isOpened():
         raise FileNotFoundError(video.path)
@@ -176,12 +201,11 @@ def predict_single_video_cnn(
 #                                   MediaPipe
 # ════════════════════════════════════════════════════════════════════════════
 
-
 def predict_single_video_mediapipe(
     video: VideoMeta,
     *,
     make_video: bool | Mapping[str, bool] | Iterable[str] = False,
-    video_folder: Path | str = "./tracking",
+    tracking_folder: Path | str = "./tracking",
     plot: bool = False,
 ) -> pd.DataFrame:
     """Track one video with MediaPipe and return a wide DataFrame."""
@@ -200,15 +224,15 @@ def predict_single_video_mediapipe(
     if not ok:
         raise RuntimeError("Empty video")
 
-    # ———————————————————————— writers / placeholders ————————————————————
+    # writers / placeholders
     writer = None
     if video_on:
-        video_folder = Path(video_folder)
-        video_folder.mkdir(parents=True, exist_ok=True)
+        tracking_folder = Path(tracking_folder)
+        tracking_folder.mkdir(parents=True, exist_ok=True)
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         h, w, _ = first.shape
         writer = cv2.VideoWriter(
-            str(video_folder / f"{video.path.stem}_MPtracked.mp4"), fourcc, video.fps, (w, h)
+            str(tracking_folder / f"{video.path.stem}_MPtracked.mp4"), fourcc, video.fps, (w, h)
         )
 
     tmpl_df, mapping = prepare_empty_dataframe(hands=True, pose=True, face_mesh=False)
@@ -220,12 +244,13 @@ def predict_single_video_mediapipe(
         dtype=float,
     )
     blends = pd.DataFrame(index=range(video.n_frames))
-    
+
     _FIVE = ("x", "y", "z", "visibility", "presence")
-    
-    # ——————————————————————————————— main loop ————————————————————————————
+
+    # main loop
     frame = first
     for i in tqdm(range(video.n_frames), desc="MediaPipe", leave=False):
+
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         ts = int(i * 1000 / video.fps)
@@ -241,7 +266,6 @@ def predict_single_video_mediapipe(
                     if (marker, sub) in lms.columns:
                         lms.loc[i, (marker, sub)] = val
 
-
         # hands → DataFrame
         if res_hands.hand_landmarks:
             for h_idx, hand in enumerate(res_hands.hand_landmarks):
@@ -253,15 +277,13 @@ def predict_single_video_mediapipe(
                         if (marker, sub) in lms.columns:
                             lms.loc[i, (marker, sub)] = val
 
-
         # head & shoulders
         if res_face.face_landmarks:
-            face_3d = np.array(
-                [[lm.x, lm.y, lm.z] for lm in res_face.face_landmarks[0]], dtype=float
-            )
+            face_3d = np.array([[lm.x, lm.y, lm.z] for lm in res_face.face_landmarks[0]], dtype=float)
             eul, shoulder = _get_head_angle(lms.loc[[i]], face_forward, face_3d)
         else:
             eul, shoulder = [np.nan, np.nan, np.nan], np.nan
+
         angles.loc[i, ["anteroretrocollis", "torticollis", "laterocollis"]] = eul
         angles.loc[i, "shoulder_angle"] = shoulder
 
@@ -281,7 +303,6 @@ def predict_single_video_mediapipe(
                 img = _draw_hands(img, res_hands)
             if plot and i % 5 == 0:
                 import matplotlib.pyplot as plt
-
                 plt.figure(); plt.imshow(img); plt.title(str(eul))
             if video_on:
                 writer.write(img)
@@ -357,7 +378,6 @@ def _load_mediapipe_models():
 
 # --- drawing wrappers --------------------------------------------------------
 
-
 def _draw_face(img, res):
     anno = img.copy()
     for lms in res.face_landmarks:
@@ -373,20 +393,18 @@ def _draw_face(img, res):
         )
         mp_solutions.drawing_utils.draw_landmarks(
             anno, proto, mp.solutions.face_mesh.FACEMESH_IRISES,
-            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_iris_connections_style(),
+            connection_drawing_spec=mp_solutions.drawing_styles.get_default_face_mesh_iris_connections_style(),
         )
     return anno
 
 
 def _draw_pose(img, res):
-    """Pretty pose overlay (MediaPipe default colours)."""
     anno = img.copy()
     for lms in res.pose_landmarks:
         proto = landmark_pb2.NormalizedLandmarkList()
         proto.landmark.extend(
             landmark_pb2.NormalizedLandmark(x=l.x, y=l.y, z=l.z) for l in lms
         )
-
         mp_solutions.drawing_utils.draw_landmarks(
             image=anno,
             landmark_list=proto,
@@ -397,20 +415,18 @@ def _draw_pose(img, res):
 
 
 def _draw_hands(img, res):
-    """Pretty hand overlay (MediaPipe default colours)."""
     anno = img.copy()
     for hand_lms in res.hand_landmarks:
         proto = landmark_pb2.NormalizedLandmarkList()
         proto.landmark.extend(
             landmark_pb2.NormalizedLandmark(x=l.x, y=l.y, z=l.z) for l in hand_lms
         )
-
         mp_solutions.drawing_utils.draw_landmarks(
             image=anno,
             landmark_list=proto,
             connections=mp.solutions.hands.HAND_CONNECTIONS,
             landmark_drawing_spec=mp_solutions.drawing_styles.get_default_hand_landmarks_style(),
-            connection_drawing_spec=mp_solutions.drawing_styles.get_default_hand_connections_style(),  # ✔︎ :contentReference[oaicite:1]{index=1}
+            connection_drawing_spec=mp_solutions.drawing_styles.get_default_hand_connections_style(),
         )
     return anno
 

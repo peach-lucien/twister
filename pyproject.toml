@@ -1,0 +1,44 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["twister*"]
+
+[project]
+name = "twister"
+version = "1.0.1"
+description = "Twstr analysis package"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Robert Peach", email = "peach_r@ukw.de" }]
+
+dependencies = [
+  "numpy",
+  "pandas",
+  "tqdm",
+  "networkx",
+  "matplotlib",
+  "albumentations",
+  "torch",
+  "torchvision",
+  "qc-procrustes @ git+https://github.com/theochem/procrustes",
+  "mediapipe==0.10.21",
+  "pycatch22",
+  "nolds",
+  "pillow==10.3.0",
+  "protobuf",
+  "scipy",
+  "scikit-learn",
+  "seaborn",
+  "platformdirs",
+]
+
+[project.scripts]
+twister = "twister.app:cli"
+twister-download-models = "twister.assets:cli_download_models"
+twister-gui = "twister.gui.clip_gui:main" 
+
+[tool.setuptools]
+include-package-data = true

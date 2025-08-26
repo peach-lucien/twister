@@ -1,154 +1,134 @@
 import os
 import pickle
+import re
+from pathlib import Path
+from typing import Iterable, List, Optional
 
 import pandas as pd
-import re
 
 from twister.data.patients import PatientCollection, Patient
 from twister.videos.utils import extract_video_details
 
 
+# ------------------------------- CSV utils -----------------------------------
 
-def save_csv(df, filename, folder="./datasets"):
-    """Save a dataset in a pickle."""
-    
-    if not os.path.exists(folder):
-        os.mkdir(folder)
+def save_csv(df: pd.DataFrame, filename: str, folder: str | os.PathLike = "./datasets") -> str:
+    """Save DataFrame to CSV under *folder* and return full path."""
+    folder_path = Path(folder)
+    folder_path.mkdir(parents=True, exist_ok=True)
+    # BUGFIX: previously used string concat; now join paths properly
+    out = folder_path / filename
+    df.to_csv(out)
+    return str(out)
 
-    df.to_csv(folder + filename)
-    
-def load_from_csv(folder='./csv_predictions/'):
-    """ load from the saved csv files """
-    
-    
-    csvs = os.listdir(folder)
-    
+
+def load_from_csv(folder: str | os.PathLike = "./csv_predictions/") -> PatientCollection:
+    """Reconstruct a PatientCollection from a folder of CSV prediction files."""
+    folder_path = Path(folder)
+    if not folder_path.exists():
+        raise FileNotFoundError(f"CSV folder not found: {folder_path}")
+
+    csvs = [p.name for p in folder_path.glob("*.csv")]
     patient_ids = list(set([re.split("_mediapipe|_movement", u)[0] for u in csvs]))
-    
+
     # empty patient list
-    patients = []
+    patients: List[Patient] = []
     for patient_id in patient_ids:
-    
-        # construct patient object
-        p = Patient(
-                    patient_id=patient_id,
-                    )
-    
-        # empty dictionary for prediction results
-        p.twister_predictions = {'movement':[],
-                                 'mediapipe':[]}   
+        p = Patient(patient_id=patient_id)
+        p.twister_predictions = {"movement": [], "mediapipe": []}
         patients.append(p)
-       
-    # create empty patient collection
+
     pc = PatientCollection()
-    
-    # load patients into patient collection
-    pc.add_patient_list(patients) 
-    
+    pc.add_patient_list(patients)
+
     # load csvs into patients
-    for csv in csvs:
-        # extract information about tracking from csv file
-        patient_id = re.split("_mediapipe|_movement", csv)[0] 
-        model_out = re.split(patient_id+'_', csv)[1].split('_')[0]
-        model_type = re.split(patient_id+'_', csv)[1].split('_')[1]
-        
-        # find the relevant patient
+    for csv_name in csvs:
+        patient_id = re.split("_mediapipe|_movement", csv_name)[0]
+        model_out = re.split(patient_id + "_", csv_name)[1].split("_")[0]
+        model_type = re.split(patient_id + "_", csv_name)[1].split("_")[1]
+
         p = pc.get_patient(patient_id)
-        
+        df = pd.read_csv(folder_path / csv_name, index_col=0)
+
         if not p.twister_predictions[model_out]:
-            results = {model_type:pd.read_csv(folder + csv,index_col=0)}
-            p.twister_predictions[model_out].append(results)
-
+            p.twister_predictions[model_out].append({model_type: df})
         else:
-            p.twister_predictions[model_out][0][model_type] = pd.read_csv(folder + csv,index_col=0)
+            p.twister_predictions[model_out][0][model_type] = df
 
-        
-        # load the csv file of tracking and save in dictionary
-        
-        # append tracked video results to patient 
-        #p.twister_predictions[model_out].append(results)
-        
-    
     return pc
-    
-
-def save_dataset(obj, filename, folder="./datasets"):
-    """Save a dataset in a pickle."""
-    
-    if not os.path.exists(folder):
-        os.mkdir(folder)
-
-    with open(os.path.join(folder, filename + ".pkl"), "wb") as f:
-        pickle.dump(obj, f)
 
 
-def load_dataset(filename):
-    """Load a dataset from a pickle."""
-    with open(filename, "rb") as f:
+# ----------------------------- object persistence ----------------------------
+
+def save_dataset(obj, filename: str, folder: str | os.PathLike = "./datasets") -> str:
+    """Pickle *obj* to <folder>/<filename>.pkl. Returns the file path."""
+    folder_path = Path(folder)
+    folder_path.mkdir(parents=True, exist_ok=True)
+    out = folder_path / f"{filename}.pkl"
+    with open(out, "wb") as f:
+        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return str(out)
+
+
+def load_dataset(filename: str | os.PathLike):
+    """Load a dataset from a pickle. Accepts either '.../name.pkl' or any full path."""
+    path = Path(filename)
+    if path.suffix != ".pkl":
+        # allow callers who pass a stem (mirror save_dataset)
+        path = path.with_suffix(".pkl")
+    with open(path, "rb") as f:
         return pickle.load(f)
 
 
-def construct_patient_collection(videos, patient_ids=None):
-    """ construct patient collection using poser """
+# ------------------------------ patient builders -----------------------------
 
-    # empty patient list
-    patients = []
-    
-    for i, video in enumerate(videos):
-        # construct patient object
-        if not patient_ids:
-            patient = construct_patient(video)
-        else:
-            patient = construct_patient(video,patient_id=patient_ids[i])
-        
+def construct_patient_collection(videos: Iterable, patient_ids: Optional[Iterable[str]] = None) -> PatientCollection:
+    """Construct a PatientCollection from file paths (or lists of paths)."""
+    patients: List[Patient] = []
+    vids = list(videos)
+    ids = list(patient_ids) if patient_ids is not None else None
+
+    for i, video in enumerate(vids):
+        pid = None if ids is None else ids[i]
+        patient = construct_patient(video, patient_id=pid)
         patients.append(patient)
-       
-    # create empty patient collection
+
     pc = PatientCollection()
-    
-    # load patients into patient collection
-    pc.add_patient_list(patients)    
-    
+    pc.add_patient_list(patients)
     return pc
 
-def construct_patient(video, patient_id=None):
-    """ construct a single patient """    
 
-    # extract video file name if not given
+def construct_patient(video, patient_id: Optional[str] = None) -> Patient:
+    """Construct a single Patient object from one path (or a list of paths)."""
+    # infer patient_id from filename if not given
     if not patient_id:
         if isinstance(video, list):
-            patient_id = os.path.basename(video[0]).split('_preprocessed')[0]
+            patient_id = Path(video[0]).name.split("_preprocessed")[0]
         else:
-            patient_id = os.path.basename(video).split('_preprocessed')[0]
-    
+            patient_id = Path(video).name.split("_preprocessed")[0]
+
     # extract video details
     if isinstance(video, list):
-        video_details = []
-        for v in video:
-            video_details.append(extract_video_details(v))    
+        video_details = [extract_video_details(v) for v in video]
     else:
         video_details = [extract_video_details(video)]
-    
-    # create patient object
-    p = Patient(sampling_frequency=video_details[0]['fps'],
-                patient_id=patient_id,
-                video_details = video_details
-                )
 
-    # empty dictionary for prediction results
-    p.twister_predictions = {'movement':None,
-                             'mediapipe':None}    
-
+    p = Patient(
+        sampling_frequency=video_details[0]["fps"],
+        patient_id=patient_id,
+        video_details=video_details,
+    )
+    p.twister_predictions = {"movement": None, "mediapipe": None}
     return p
 
-def find_video_files(directory, extensions=None):
+
+def find_video_files(directory: str | os.PathLike, extensions=None):
+    """Return list of video files in *directory* with given extensions."""
     if extensions is None:
-        extensions = ['.mp4', '.avi', '.mov', '.wmv', '.mkv', '.MOV']
-    video_files = []
-
-    for item in os.listdir(directory):
-        if os.path.isfile(os.path.join(directory, item)):
-            if any(item.endswith(extension) for extension in extensions):
-                video_files.append(os.path.join(directory, item))
-
-    return video_files
+        extensions = [".mp4", ".avi", ".mov", ".wmv", ".mkv", ".MOV"]
+    directory = Path(directory)
+    files = []
+    for item in directory.iterdir():
+        if item.is_file() and any(item.name.endswith(ext) for ext in extensions):
+            files.append(str(item))
+    return files

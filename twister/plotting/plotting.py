@@ -18,6 +18,7 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy.cluster.hierarchy import dendrogram, linkage
 
 from twister.plotting.utils import check_folder, circular_hist
+import re
 
 matplotlib.use("Agg")
 L = logging.getLogger(__name__)
@@ -34,37 +35,51 @@ def _save_to_pdf(pdf, figs=None):
         plt.close()
 
 
+
+def _video_index(key: str) -> int:
+    m = re.search(r"_v(\d+)$", key)
+    return int(m.group(1)) if m else -1
+
 def plot(all_results, patient_collection, plotting_args):
-    """ Plot all patients in patient collection """
-    
-    # extract plotting arguments
+    """ Plot all patients in patient collection (now: one PDF per video). """
     folder = plotting_args['plotting_folder']
     ext = plotting_args['ext']
-    
+
     for patient in tqdm(patient_collection):
-        results = all_results[patient.patient_id]
-        
-        # update folder name
-        patient_folder = os.path.join(folder,patient.patient_id + '/')
-        
-        # check folder exists or make
+        patient_id = patient.patient_id
+
+        # collect all keys for this patient: patient_id, patient_id_v0, patient_id_v1, ...
+        keys = [k for k in all_results.keys()
+                if k == patient_id or k.startswith(f"{patient_id}_v")]
+
+        if not keys:
+            continue
+
+        # stable order: v0, v1, ... ; plain patient_id (no suffix) first (index -1)
+        keys.sort(key=_video_index)
+
+        # ensure patient folder exists
+        patient_folder = os.path.join(folder, patient_id, '')
         check_folder(patient_folder)
-        
-        # plot analysis for individual patient
-        plot_analysis(results, patient_folder, patient, ext=ext)
+
+        # plot each video’s results into its own PDF
+        for subject_key in keys:
+            results = all_results[subject_key]
+            plot_analysis(results, patient_folder, subject_id=subject_key, ext=ext)
 
         
-
 def plot_analysis(
     analysis_results,
     folder,
-    patient,
+    subject_id: str,      # was 'patient'
     ext=".svg",
 ):
-    """Plot summary of twister analysis."""
-    
-    with PdfPages(os.path.join(folder, "analysis_report_{}.pdf".format(patient.patient_id))) as pdf:
-        
+    """Plot summary of twister analysis for a single video (subject_id may be 'alice_v0')."""
+
+    # write file with the subject_id so each video gets its own report
+    pdf_path = os.path.join(folder, f"analysis_report_{subject_id}.pdf")
+    with PdfPages(pdf_path) as pdf:
+
          L.info("Plot movement correlation heatmap")
          try_except_pass(_plot_movement_correlation_heatmap, analysis_results, ext)
          try_except_pass(_save_to_pdf, pdf)
@@ -82,7 +97,7 @@ def plot_analysis(
          try_except_pass(_save_to_pdf, pdf)
         
          L.info("Plot movement transitions")
-         try_except_pass(_plot_time_per_movement, analysis_results, ext)
+         try_except_pass(_plot_movement_transitions, analysis_results, ext)   # ← fixed call
          try_except_pass(_save_to_pdf, pdf)
 
          L.info("Plot movement transition network")
@@ -91,11 +106,7 @@ def plot_analysis(
 
          L.info("Plot incoming and outgoing movement transitions")
          try_except_pass(_plot_distribution_movement_transitions, analysis_results, ext)
-         try_except_pass(_save_to_pdf, pdf)#
-
-         #L.info("Plot scores")
-         #_plot_movement_score(analysis_results, ext=ext)
-         #_save_to_pdf(pdf)             
+         try_except_pass(_save_to_pdf, pdf)
 
          L.info("Plot angles distributions by movement axes")
          try_except_pass(_plot_movement_angles, analysis_results, ext)
@@ -105,17 +116,17 @@ def plot_analysis(
          try_except_pass(_plot_angle_movements, analysis_results, ext)
          try_except_pass(_save_to_pdf, pdf)
 
-         L.info("Plot marker correlationns")
-         try_except_pass(_plot_marker_correlation_heatmap, analysis_results, ext)
-         try_except_pass(_save_to_pdf, pdf)     
+         #L.info("Plot marker correlations")
+         #try_except_pass(_plot_marker_correlation_heatmap, analysis_results, ext)
+         #try_except_pass(_save_to_pdf, pdf)     
   
-         L.info("Plot mean correlation per marker")
-         try_except_pass(_plot_distribution_marker_correlations, analysis_results, ext)
-         try_except_pass(_save_to_pdf, pdf)
-         
-         L.info("Plot structural features over time")
-         try_except_pass(_plot_structural_features, analysis_results, ext)
-         try_except_pass(_save_to_pdf, pdf)
+         #L.info("Plot mean correlation per marker")
+         #try_except_pass(_plot_distribution_marker_correlations, analysis_results, ext)
+         #try_except_pass(_save_to_pdf, pdf)
+
+         #L.info("Plot structural features over time")
+         #try_except_pass(_plot_structural_features, analysis_results, ext)
+         #try_except_pass(_save_to_pdf, pdf)
 
     
 def _plot_structural_features(results, ext=".png"):
@@ -188,7 +199,7 @@ def _plot_marker_correlation_heatmap(results, ext=".png"):
 def _plot_movement_angles(results, ext=".png"):
     """ plotting angle distributions by movement axes """
     
-    movements = results['Transitions']['transition_matrix'].columns.tolist()
+    movements = results['MovementTransitions']['transition_matrix'].columns.tolist()
     movement_axes = ['angle_anteroretrocollis', 'angle_laterocollis', 'angle_torticollis']
 
     fig, ax = plt.subplots(1,3, figsize=(20,30), subplot_kw=dict(projection='polar'))
@@ -213,7 +224,7 @@ def _plot_movement_angles(results, ext=".png"):
 def _plot_angle_movements(results, ext=".png"):
     """ plotting angle distributions by movement """
     
-    movements = results['Transitions']['transition_matrix'].columns.tolist()
+    movements = results['MovementTransitions']['transition_matrix'].columns.tolist()
     movement_axes = ['angle_anteroretrocollis', 'angle_laterocollis', 'angle_torticollis']
 
     fig, ax = plt.subplots(7,1, figsize=(60,35), subplot_kw=dict(projection='polar'))
@@ -237,7 +248,7 @@ def _plot_angle_movements(results, ext=".png"):
 def _plot_movement_score(results, ext=".png"):
     """ plotting score distributions """
 
-    movements = results['Transitions']['transition_matrix'].columns.drop('face_forward')
+    movements = results['MovementTransitions']['transition_matrix'].columns.drop('face_forward')
     #score_distribution = results['Scores']['feature_vector']    
     
     fig, axes = plt.subplots(6, 1, figsize=(6, 8), sharex=True)
@@ -247,20 +258,6 @@ def _plot_movement_score(results, ext=".png"):
         
         movement_results.loc[0,movement] = results['Scores'][movement]['median']
         
-        
-        # sns.barplot(x=list(score_distribution.columns), 
-        #             y=score_distribution.loc[movement,:].values,
-        #             ax=axes[i], palette="Spectral", order=list(score_distribution.columns))  
-        
-        # axes[i].set_ylim([0,1])
-        # axes[i].set_ylabel(movement)
-        # #axes[i].bar_label(axes[i].containers[0],label_type='center')
-        
-        # # Adjust width    
-        # for patch in axes[i].patches:
-        #     current_width = patch.get_width()
-        #     patch.set_width(1)
-        #     patch.set_y(patch.get_y() + current_width - 1)
     
     movement_results = movement_results.dropna(axis=1)
     
@@ -276,7 +273,7 @@ def _plot_time_per_movement(results, ext=".png"):
     """ plotting time spent in each movement in seconds """ 
     
     # get movement times
-    movement_t = results['Symmetry']['sum_movements']
+    movement_t = results['MovementSymmetry']['sum_movements']
 
     plt.figure(figsize=(10,6))
 
@@ -300,7 +297,7 @@ def _plot_distribution_movement_transitions(results, ext=".png"):
     """ distribution of movement correlations as boxplot """
     
     # get correlation matrix
-    transition_matrix = results['Transitions']['transition_matrix']
+    transition_matrix = results['MovementTransitions']['transition_matrix']
     
     # set diagonal to nan
     transition_matrix.values[[np.arange(transition_matrix.shape[0])]*2] = np.nan  
@@ -331,7 +328,7 @@ def _plot_movement_transitions(results, ext=".png"):
     """ plot transition matrix heatmap """ 
 
     # extract movement transitions
-    transition_matrix = results['Transitions']['transition_matrix']
+    transition_matrix = results['MovementTransitions']['transition_matrix']
         
     # mask the upper triangular (since its symmetric)
     mask = np.triu(np.ones_like(transition_matrix, dtype=bool))
@@ -356,7 +353,7 @@ def _plot_movement_transition_network(results, ext=".png"):
     """ plot transition matrix heatmap """ 
 
     # extract movement transitions
-    transition_matrix = results['Transitions']['n_transitions']
+    transition_matrix = results['MovementTransitions']['n_transitions']
        
     T_ = transition_matrix.copy()
     np.fill_diagonal(T_.values,0)
@@ -387,7 +384,7 @@ def _plot_movement_transition_network(results, ext=".png"):
 def _plot_symmetry(results, ext=".png"):
     
     # get movement symmetries
-    movement_symmetry = results['Symmetry'].copy()
+    movement_symmetry = results['MovementSymmetry'].copy()
     
     # remove sum of movements
     movement_symmetry.pop('sum_movements', None)
@@ -417,7 +414,7 @@ def _plot_distribution_movement_correlations(results, ext=".png"):
     """ distribution of movement correlations as boxplot """
     
     # get correlation matrix
-    correlation_matrix = results['Correlations']['correlation_matrix']
+    correlation_matrix = results['MovementCorrelations']['correlation_matrix']
     
     # set diagonal to nan
     correlation_matrix.values[[np.arange(correlation_matrix.shape[0])]*2] = np.nan    
@@ -435,7 +432,7 @@ def _plot_movement_correlation_heatmap(results, ext=".png"):
     """ plot correlation heatmap """ 
     
     # extract correlation matrix
-    correlation_matrix = results['Correlations']['correlation_matrix']
+    correlation_matrix = results['MovementCorrelations']['correlation_matrix']
     
     # mask the upper triangular (since its symmetric)
     mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
