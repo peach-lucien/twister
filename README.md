@@ -49,12 +49,11 @@ System notes:
   ```
 - **MediaPipe task files:** the following files must be present under the package path
   `twister/models/mediapipe_models/`:
-  - `hand_landmarker.task`
-  - `face_landmarker.task`
-  - `pose_landmarker_heavy.task`
+  - `hand_landmarker.task` (https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task)
+  - `face_landmarker.task` (https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task)
+  - `pose_landmarker_heavy.task` (https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task)
 
-  If you don’t ship them in the repo, download the official `.task` files and place them there
-  (same filenames). TWISTER will read them from that directory at runtime.
+  Download the official `.task` files and place them inside the mediapipe_models folder (same filenames). TWISTER will read them from that directory at runtime.
 
 ---
 
@@ -162,12 +161,14 @@ Typical repo layout (subset):
 twister/
   app.py                     # CLI entrypoint
   twister.py                 # twstr class (pipeline orchestrator)
-  gui/clip_gui.py            # GUI
-  models/mediapipe_models/   # *.task files
+  io.py
+  gui/                       # GUI
+  models/                    # *.task files
   statistics/                # feature extraction
   plotting/                  # report plots
+  videos/
 examples/
-  example_2/
+  some_example_folder/
     data/                    # raw videos
     outputs/                 # created by you
 ```
@@ -193,7 +194,7 @@ object (no inference), so downstream statistics/plots run without recomputation.
 
 ---
 
-# YouTube demo: download sample videos and run TWISTER GUI
+## YouTube demo: download sample videos and run TWISTER GUI
 
 This example uses **yt-dlp** to fetch two public YouTube videos, stores them under `examples/youtube_demo/data/`, and then runs the **TWISTER** pipeline with the GUI, both via the **CLI** and directly from **Python**.
 
@@ -208,7 +209,7 @@ This example uses **yt-dlp** to fetch two public YouTube videos, stores them und
 
 ---
 
-## Script 1 — Run via CLI (launches the GUI automatically)
+### Script 1 — Run via CLI (launches the GUI automatically)
 
 **File:** `examples/youtube_demo/prepare_and_run_cli.py`
 
@@ -284,7 +285,7 @@ This will download the two videos into `examples/youtube_demo/data/`, open the T
 
 ---
 
-## Script 2 — Run from Python (explicitly call GUI + pipeline)
+### Script 2 — Run from Python (explicitly call GUI + pipeline)
 
 **File:** `examples/youtube_demo/prepare_and_run_python.py`
 
@@ -428,9 +429,6 @@ twister --nogui --videos ./data --out ./outputs
 Place `hand_landmarker.task`, `face_landmarker.task`,
 `pose_landmarker_heavy.task` under `twister/models/mediapipe_models/`.
 
-**Too many Matplotlib versions during install**  
-Pin a compatible Matplotlib (e.g., `matplotlib>=3.6,<3.9`) in your `pyproject.toml`
-to avoid backtracking.
 
 ---
 
