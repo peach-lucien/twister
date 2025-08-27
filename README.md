@@ -27,10 +27,12 @@
 
 ## Installation
 
-Requires Python **3.9–3.12**.
 
 ```bash
 git clone https://github.com/peach-lucien/twister.git
+conda create -n twister python=3.11 -y
+conda activate twister
+conda install -c conda-forge ffmpeg -y
 cd twister
 pip install -e .
 ```
