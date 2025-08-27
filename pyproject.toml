@@ -33,6 +33,7 @@ dependencies = [
   "scikit-learn",
   "seaborn",
   "platformdirs",
+  "yt-dlp",
 ]
 
 [project.scripts]

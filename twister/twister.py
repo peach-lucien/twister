@@ -137,6 +137,8 @@ class twstr:
         feature_matrix = pd.concat(all_features, ignore_index=True)
         feature_matrix.index = list(all_features.keys())
         self.feature_matrix = feature_matrix.astype(float)
+        self.feature_matrix.to_csv(self.output_path / 'features.csv')
+
 
     def plot(self):
         """Generate summary plots for each patient."""
