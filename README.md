@@ -55,6 +55,12 @@ System notes:
 
   Download the official `.task` files and place them inside the mediapipe_models folder (same filenames). TWISTER will read them from that directory at runtime.
 
+- **Windows:** Windows requires a little more work to get things installed and running.
+- First gitbash should be installed https://git-scm.com/downloads 
+- You will also needs Microsoft Visual Studio C++ 14.0 or greater (this is needs).
+- You will also need to install ffmpeg and have it available on your path.
+
+
 ---
 
 ## Quick start

@@ -83,7 +83,6 @@ if __name__ == "__main__":
     tw.csv_dir = OUT_ROOT / "csv_predictions"
 
     tw.run(
-        preprocess_videos=False,
         make_video=True,
         save_csv=True,
         recompute_existing=False,  # load CSVs if they already exist
