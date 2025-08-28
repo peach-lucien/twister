@@ -61,8 +61,9 @@ System notes:
 
 ### A) CLI with GUI (trim/crop first, then run)
 
+From the main folder:
 ```bash
-twister --videos ./examples/example_2/data --out ./examples/example_2/outputs
+twister --videos ./examples/your_example_folder/your_data_folder --out ./examples/your_example_folder/outputs
 ```
 
 - A GUI opens so you can **select start/end** and **optional ROI** per video.
