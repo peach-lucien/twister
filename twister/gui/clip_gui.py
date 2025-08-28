@@ -11,7 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 
 # ───────── config ─────────
-VIDEO_EXTS  = (".mp4", ".mov", ".MOV", ".avi", ".mkv")
+VIDEO_EXTS  = (".mp4", ".MP4", ".mov", ".MOV", ".avi", ".mkv")
 CLIP_RE     = re.compile(r"^(?P<stem>.+)__s(?P<s>\d+)_e(?P<e>\d+)\.mp4$")
 TIMELINE_H  = 28
 HANDLE_W    = 8
