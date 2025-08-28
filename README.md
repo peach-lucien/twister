@@ -50,7 +50,7 @@ System notes:
 - **MediaPipe task files:** the following files must be present under the package path
   `twister/models/mediapipe_models/`:
   - `hand_landmarker.task` (https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task)
-  - `face_landmarker.task` (https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task)
+  - `face_landmarker.task` (https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task)
   - `pose_landmarker_heavy.task` (https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task)
 
   Download the official `.task` files and place them inside the mediapipe_models folder (same filenames). TWISTER will read them from that directory at runtime.
