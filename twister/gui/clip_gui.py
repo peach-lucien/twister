@@ -56,43 +56,75 @@ def list_clips_for(stem: str, out_dir: Path) -> list[Path]:
 
 def write_clip(src: Path, dst_dir: Path, start_f: int, end_f: int,
                roi: tuple[int,int,int,int] | None,
-               fourcc: str = "mp4v") -> Path:
+               fourcc: str = "mp4v",
+               rotation_deg: int = 0) -> Path:
     cap = cv2.VideoCapture(str(src))
     if not cap.isOpened():
         raise IOError(f"Cannot open {src}")
+
     fps    = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     n_fr   = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     start  = max(0, min(start_f, n_fr - 1))
     end    = max(start + 1, min(end_f, n_fr))
+
+    safe_mkdir(dst_dir)
+
+    # Seek to first frame and probe rotated dimensions
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    ok, frame0 = cap.read()
+    if not ok:
+        cap.release()
+        raise IOError("Cannot read first frame at start index")
+    frame0r = rotate_bgr(frame0, rotation_deg)
+    rh, rw = frame0r.shape[:2]
 
     if roi:
         x, y, w, h = roi
         out_w, out_h = int(w), int(h)
     else:
         x = y = 0
-        out_w, out_h = width, height
+        out_w, out_h = rw, rh
 
-    safe_mkdir(dst_dir)
-    out = dst_dir / f"{src.stem}__s{start}_e{end}.mp4"
+    rot_suffix = f"__rot{rotation_deg%360}" if (rotation_deg % 360) else ""
+    out = dst_dir / f"{src.stem}__s{start}_e{end}{rot_suffix}.mp4"
+
     writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*fourcc), fps, (out_w, out_h))
     if not writer.isOpened():
         cap.release()
         raise IOError(f"Cannot write to {out}")
 
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-    for _ in range(start, end):
+    # Write the first (already-read) frame
+    f = frame0r[y:y+out_h, x:x+out_w] if roi else frame0r
+    writer.write(f)
+
+    # Continue for the rest
+    for _ in range(start + 1, end):
         ok, frame = cap.read()
         if not ok:
             break
+        fr = rotate_bgr(frame, rotation_deg)
         if roi:
-            frame = frame[y:y+out_h, x:x+out_w]
-        writer.write(frame)
+            fr = fr[y:y+out_h, x:x+out_w]
+        writer.write(fr)
 
     writer.release()
     cap.release()
     return out
+
+
+def rotate_bgr(frame, deg: int):
+    """Rotate an OpenCV BGR frame by 0/90/180/270 degrees."""
+    d = deg % 360
+    if d == 0:
+        return frame
+    if d == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if d == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if d == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    raise ValueError("Rotation must be a multiple of 90°")
+
 
 # ───────── GUI ─────────
 
@@ -128,6 +160,7 @@ class ClipGUI:
         self.n_frames = 0
         self.width = self.height = 0
         self.roi: tuple[int,int,int,int] | None = None
+        self.rotation_deg = 0  # 0/90/180/270
 
         # selection/playback
         self.start_var = tk.IntVar(value=0)
@@ -220,6 +253,9 @@ class ClipGUI:
         ttk.Button(controls, text="⟶ End",   command=self._jump_end).pack(side="left", padx=(4,0))
         ttk.Button(controls, text="◀ Step",  command=lambda: self._nudge(-1)).pack(side="left", padx=(12,0))
         ttk.Button(controls, text="Step ▶",  command=lambda: self._nudge(+1)).pack(side="left", padx=(4,0))
+        ttk.Button(controls, text="⟲ 90°", command=lambda: self._rotate(-90)).pack(side="left", padx=(16,0))
+        ttk.Button(controls, text="90° ⟳", command=lambda: self._rotate(+90)).pack(side="left", padx=(4,0))
+
 
         ttk.Label(controls, text="Speed").pack(side="left", padx=(16,4))
         self.speed_var = tk.StringVar(value="1x")
@@ -247,6 +283,17 @@ class ClipGUI:
         self.root.bind("e",      lambda _e: self._set_end_current())
         self.root.bind("<Left>", lambda _e: self._nudge(-1))
         self.root.bind("<Right>",lambda _e: self._nudge(+1))
+        self.root.bind("r", lambda _e: self._rotate(+90))   # clockwise
+        self.root.bind("R", lambda _e: self._rotate(-90))   # counter-clockwise
+
+    def _rotate(self, delta_deg: int):
+        self.rotation_deg = (self.rotation_deg + delta_deg) % 360
+        # ROI is no longer valid after orientation change
+        self.roi = None
+        # refresh preview and timeline
+        self._show_frame(int(self.scrub.get()))
+        self._update_status()
+
 
     # ── list / load
 
@@ -309,6 +356,9 @@ class ClipGUI:
         self._show_frame(0)
         self._update_status()
         self._draw_timeline()
+        self.rotation_deg = 0
+        self.roi = None
+
 
     # ── preview / playback
 
@@ -335,6 +385,7 @@ class ClipGUI:
         ok, frame = self._read_frame(idx)
         if not ok:
             return
+        frame = rotate_bgr(frame, self.rotation_deg)  # ← rotate for preview
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         im  = Image.fromarray(rgb)
         self._render_on_canvas(im)
@@ -478,6 +529,7 @@ class ClipGUI:
         ok, frame = self._read_frame(idx)
         if not ok:
             return
+        frame = rotate_bgr(frame, self.rotation_deg)  # ← rotate for ROI selection
         r = cv2.selectROI("Select ROI (ENTER to confirm)", frame, fromCenter=False, showCrosshair=True)
         cv2.destroyWindow("Select ROI (ENTER to confirm)")
         if r is None:
@@ -501,7 +553,7 @@ class ClipGUI:
         dst = self.out_dir
         safe_mkdir(dst)
         try:
-            out = write_clip(src, dst, s, e, self.roi)
+            out = write_clip(src, dst, s, e, self.roi, rotation_deg=self.rotation_deg)
         except Exception as ex:
             messagebox.showerror("Error", str(ex))
             return
@@ -543,7 +595,10 @@ class ClipGUI:
         p = self.videos[self.idx]
         clips = list_clips_for(p.stem, self.out_dir)
         roi_txt = "ROI: none" if self.roi is None else f"ROI: {self.roi}"
-        self.status.config(text=f"{p.name}  |  saved clips: {len(clips)}  |  start={self.start_var.get()}  end={self.end_var.get()}  |  {roi_txt}")
+        rot_txt = f"rot={self.rotation_deg}°"
+        self.status.config(
+            text=f"{p.name}  |  saved clips: {len(clips)}  |  start={self.start_var.get()}  end={self.end_var.get()}  |  {roi_txt}  |  {rot_txt}"
+        )
 
 # ───────── entrypoint ─────────
 
