@@ -8,6 +8,7 @@
 [▶️ Quick start](#quick-start) •
 [🖼️ GUI workflow](#gui-workflow) •
 [🧪 Run from Python](#run-from-python) •
+[♻️ Re‑analyse from CSV](#re-analyse-from-csv-no-inference) •
 [📦 Project layout & outputs](#project-layout--outputs) •
 [❓FAQ / Troubleshooting](#faq--troubleshooting)
 
@@ -74,8 +75,8 @@ twister-download-models
 ```
 
 **Windows notes**
-- Install Git for Windows.
-- Install Microsoft **Visual C++ Build Tools** (required by some deps).
+- Install Git for Windows (Git bash can be installed).
+- Install Microsoft **Visual C++ Build Tools** (required by some deps). You might need the add-ons of 'desktopentwicklung c++' and 'c++ tools for linux and mac development'.
 - Ensure `ffmpeg.exe` is on your PATH (e.g. via Chocolatey).
 
 **Where models are stored?**  
@@ -99,6 +100,7 @@ twister --videos ./path/to/videos --out ./outputs
 
 **Useful flags**
 - `--nogui` — run directly on the folder.
+- `--preprocess` — create smaller intermediate videos first.
 - `--recompute-existing` — recompute predictions even if CSVs exist.
 - `--no-make-video` — skip writing overlay/tracking MP4s.
 - `--no-save-csv` — skip writing prediction CSVs.
@@ -150,7 +152,6 @@ tw.tracking_dir = out_dir / "tracking"          # optional: explicit output subd
 tw.csv_dir      = out_dir / "csv_predictions"
 
 tw.run(
-    preprocess_videos=False,
     make_video=True,
     save_csv=True,
     recompute_existing=False,   # re-use cached CSVs if present
@@ -161,6 +162,18 @@ print("Done →", out_dir)
 ```
 
 > Want the GUI from Python? Import and launch `ClipGUI` first, then point `video_path` to the clips folder.
+
+---
+
+## Re-analyse from CSV (no inference)
+
+If you already have prediction CSVs (e.g. from a previous run), you can rebuild plots and features **without** running the models again:
+
+```bash
+twister --videos ./outputs/clips --out ./outputs --nogui
+```
+
+This is because the model identifies if csv's have already been produced for the videos of interest.
 
 ---
 

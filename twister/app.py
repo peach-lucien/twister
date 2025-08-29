@@ -7,6 +7,7 @@ from pathlib import Path
 
 from twister.twister import twstr
 from twister.io import find_video_files
+from twister.io import load_from_csv
 
 def _has_display() -> bool:
     # crude check to avoid Tk errors on headless servers
@@ -116,6 +117,64 @@ def cli(argv: list[str] | None = None) -> int:
 
     print(f"[twister] Done. Outputs in: {out_root}")
     return 0
+
+
+def _run_reports_from_csv(csv_dir: Path, out_root: Path, *, ext: str = ".svg") -> None:
+    """
+    Load prediction CSVs from csv_dir, compute statistics, aggregate features,
+    and write reports into out_root.
+    """
+    out_root = out_root.resolve()
+    plots_dir = out_root / "plots"
+    out_root.mkdir(parents=True, exist_ok=True)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) Load patient collection directly from CSVs
+    pc = load_from_csv(folder=str(csv_dir) + "/")
+
+    # 2) Create a twstr shell for analysis/plots; no inference
+    t = twstr(
+        video_path=None,
+        output_path=str(out_root),
+        plotting_args={"plotting_folder": str(plots_dir) + "/", "ext": ext},
+    )
+    t.patient_collection = pc
+
+    # 3) Compute statistics, aggregate features, and plot reports
+    t.analyse()
+    t.aggregate()
+    t.plot()
+
+    # 4) Save features
+    (out_root / "features_from_csv.csv").write_text(t.feature_matrix.to_csv())
+    print(f"[twister] re-analysis complete → {out_root}")
+
+def cli_from_csv(argv: list[str] | None = None) -> int:
+    """
+    CLI entrypoint: rebuild reports/features from existing CSV predictions.
+    """
+    p = argparse.ArgumentParser(
+        prog="twister-from-csv",
+        description="Generate plots and aggregate features from existing CSV predictions (no inference).",
+    )
+    p.add_argument("--csv", type=Path, default=None,
+                   help="Folder containing CSV predictions. If omitted, defaults to <out>/csv_predictions.")
+    p.add_argument("--out", type=Path, default=Path("./outputs"),
+                   help="Root output folder (plots, features_from_csv.csv). Default: ./outputs")
+    p.add_argument("--ext", default=".svg",
+                   help="Plot file extension for embedded figures in reports. Default: .svg")
+    args = p.parse_args(argv)
+
+    out_root = args.out.resolve()
+    csv_dir = args.csv.resolve() if args.csv else (out_root / "csv_predictions")
+
+    if not csv_dir.exists():
+        print(f"[twister] CSV folder not found: {csv_dir}", file=sys.stderr)
+        return 2
+
+    _run_reports_from_csv(csv_dir=csv_dir, out_root=out_root, ext=args.ext)
+    return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(cli())

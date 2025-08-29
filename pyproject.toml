@@ -40,6 +40,7 @@ dependencies = [
 twister = "twister.app:cli"
 twister-download-models = "twister.assets:cli_download_models"
 twister-gui = "twister.gui.clip_gui:main" 
+twister-from-csv = "twister.app:cli_from_csv"
 
 [tool.setuptools]
 include-package-data = true

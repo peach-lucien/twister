@@ -78,8 +78,10 @@ def feature_extraction(patient, list_feature_classes):
     for v_idx in range(n_videos):
         # ---- build a minimal per-video view
         view = SimpleNamespace(**patient.__dict__.copy())
-        view.video_details = [patient.video_details[v_idx]]
-
+        #view.video_details = [patient.video_details[v_idx]]
+        vd = getattr(patient, "video_details", None)
+        view.video_details = [vd[v_idx]] if (vd and len(vd) > v_idx) else None
+        
         tp = getattr(patient, "twister_predictions", {}) or {}
         tp_view = {}
         for model_name, lst in tp.items():
