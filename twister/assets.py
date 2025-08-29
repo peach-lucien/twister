@@ -13,14 +13,11 @@ from tqdm.auto import tqdm
 # ─────────────────────────────────────────────────────────────────────────────
 # Asset registry
 # name -> (URL, relative_subpath_under_models_base, sha256 or None)
-# The base directory is: <base>/<subpath>, where <base> is chosen by --dir
-#  • --dir package → site-packages/twister/models
-#  • --dir cache   → ~/.cache/twister/mediapipe_models (and siblings)
-#  • --dir custom  → user-supplied base dir
+# Base dir is resolved by --dir (package/cache/custom)
 # ─────────────────────────────────────────────────────────────────────────────
 
 ASSETS: dict[str, tuple[str, str, str | None]] = {
-    # MediaPipe task files
+    # MediaPipe task files → twister/models/mediapipe_models/
     "hand_landmarker": (
         "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
         "mediapipe_models/hand_landmarker.task",
@@ -37,22 +34,19 @@ ASSETS: dict[str, tuple[str, str, str | None]] = {
         None,
     ),
 
-    # CNN model (Dataverse)
-    # Stores as: twister/models/movement_models/model_multilabel.pth
+    # CNN checkpoint → twister/models/movement_models/
     "cnn_multilabel": (
         "https://dataverse.harvard.edu/api/access/datafile/8542960",
         "movement_models/model_multilabel.pth",
-        None,  # add sha256 string here if you want integrity checking
+        None,  # add SHA256 string if you want integrity checking
     ),
 }
 
-# Group aliases for convenience
 GROUPS: dict[str, list[str]] = {
     "mediapipe": ["hand_landmarker", "face_landmarker", "pose_landmarker_heavy"],
     "movement": ["cnn_multilabel"],
     "all": list(ASSETS.keys()),
 }
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -64,7 +58,6 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
 
 def _download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -84,17 +77,13 @@ def _download(url: str, dest: Path) -> None:
                     p.update(len(chunk))
     tmp.replace(dest)
 
-
 def _package_models_base() -> Path:
-    # Base folder: site-packages/twister/models
+    # Base: <site-packages>/twister/models  (or repo's twister/models in editable installs)
     return Path(ir.files("twister")) / "models"
 
-
 def _cache_models_base() -> Path:
-    # Base folder: ~/.cache/twister
-    # We'll store under ~/.cache/twister/<subdir> (e.g. mediapipe_models/, movement_models/)
+    # Base: ~/.cache/twister
     return Path(user_cache_dir("twister", "twister"))
-
 
 def _is_writable_dir(p: Path) -> bool:
     try:
@@ -106,14 +95,20 @@ def _is_writable_dir(p: Path) -> bool:
     except Exception:
         return False
 
-
-def _resolve_base_dir(which: str, custom: Path | None) -> Path:
+def _resolve_base_dir(which: str, custom: Path | None, allow_fallback: bool) -> Path:
     if which == "package":
         base = _package_models_base()
         if _is_writable_dir(base):
             return base
-        print(f"[twister] package dir not writable: {base} — falling back to cache")
-        return _cache_models_base()
+        if allow_fallback:
+            print(f"[twister] package dir not writable: {base} — falling back to user cache")
+            return _cache_models_base()
+        raise SystemExit(
+            "[twister] package dir is read-only:\n"
+            f"  {base}\n"
+            "Run in an editable install (pip -e .), grant write permissions, or use:\n"
+            "  twister-download-models --dir custom --path /desired/writable/path --no-fallback\n"
+        )
     if which == "cache":
         return _cache_models_base()
     if which == "custom":
@@ -121,7 +116,6 @@ def _resolve_base_dir(which: str, custom: Path | None) -> Path:
         custom.mkdir(parents=True, exist_ok=True)
         return custom
     raise ValueError(which)
-
 
 def _expand_names(names: list[str]) -> list[str]:
     if not names:
@@ -133,18 +127,16 @@ def _expand_names(names: list[str]) -> list[str]:
         elif n in ASSETS:
             out.append(n)
         else:
-            raise SystemExit(f"Unknown asset/model '{n}'. Choices: {list(ASSETS)} or groups {list(GROUPS)}")
+            raise SystemExit(f"Unknown asset '{n}'. Choices: {list(ASSETS)} or groups {list(GROUPS)}")
     # de-dup preserving order
-    seen = set()
-    uniq = []
+    seen = set(); uniq = []
     for n in out:
         if n not in seen:
             uniq.append(n); seen.add(n)
     return uniq
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Public API
+# Public API / CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
 def download_models(names: list[str], base_dir: Path, *, force: bool = False) -> list[Path]:
@@ -165,7 +157,6 @@ def download_models(names: list[str], base_dir: Path, *, force: bool = False) ->
                 print(f"[twister] already present: {dest}")
                 targets.append(dest)
                 continue
-
         print(f"[twister] downloading {name} → {dest}")
         _download(url, dest)
         if expected:
@@ -176,23 +167,20 @@ def download_models(names: list[str], base_dir: Path, *, force: bool = False) ->
         targets.append(dest)
     return targets
 
-
 def cli_download_models(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Download model assets for TWISTER (MediaPipe tasks & CNN checkpoint)")
-    ap.add_argument("--dir", choices=["package", "cache", "custom"], default="cache",
-                    help="Where to place files (default: cache). 'package' tries site-packages, falls back to cache.")
+    ap.add_argument("--dir", choices=["package", "cache", "custom"], default="package",
+                    help="Where to place files (default: package dir twister/models).")
     ap.add_argument("--path", type=Path, default=None,
                     help="Used with --dir custom to specify a base directory.")
+    ap.add_argument("--no-fallback", action="store_true",
+                    help="If --dir package is not writable, error out instead of falling back to cache.")
     ap.add_argument("--force", action="store_true", help="Re-download even if present.")
-    ap.add_argument(
-        "models",
-        nargs="*",
-        default=["all"],
-        help=f"Subset to download. Options: {list(ASSETS)} or groups {list(GROUPS)}; default: all",
-    )
+    ap.add_argument("models", nargs="*", default=["all"],
+                    help=f"Subset to download. Options: {list(ASSETS)} or groups {list(GROUPS)}; default: all")
     args = ap.parse_args(argv)
 
-    base = _resolve_base_dir(args.dir, args.path)
+    base = _resolve_base_dir(args.dir, args.path, allow_fallback=(not args.no_fallback))
     paths = download_models(args.models, base, force=args.force)
 
     print("\n[twister] downloaded:")
@@ -206,7 +194,6 @@ def cli_download_models(argv: list[str] | None = None) -> int:
         "  3) user cache (~/.cache/twister/...)\n"
     )
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(cli_download_models())
