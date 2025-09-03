@@ -260,7 +260,7 @@ def predict_single_video_mediapipe(
 
         # pose → DataFrame
         if res_pose.pose_world_landmarks:
-            for idx, lm in enumerate(res_pose.pose_world_landmarks[0]):
+            for idx, lm in enumerate(res_pose.pose_landmarks[0]):
                 marker = mapping["pose"][idx]
                 for val, sub in zip((lm.x, lm.y, lm.z, lm.visibility, lm.presence), _FIVE):
                     if (marker, sub) in lms.columns:
@@ -433,6 +433,28 @@ def _draw_hands(img, res):
 
 # --- maths -------------------------------------------------------------------
 
+# def _get_head_angle(pose_row: pd.DataFrame, face_forward: np.ndarray, face_3d: np.ndarray):
+#     cols = [
+#         ("left_shoulder", "x"), ("left_shoulder", "y"),
+#         ("right_shoulder", "x"), ("right_shoulder", "y"),
+#     ]
+#     try:
+#         if not pose_row[cols].isna().any().any():
+#             dx = (pose_row[cols[0]] - pose_row[cols[2]]).astype(float).iat[0]
+#             dy = (pose_row[cols[1]] - pose_row[cols[3]]).astype(float).iat[0]
+#             ang = -np.arctan2(dy, dx)
+#             R2 = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
+#             rot_ff = np.hstack([face_forward[:, :2] @ R2, face_forward[:, 2:]])
+#             shoulder_deg = np.rad2deg(ang)
+#         else:
+#             raise ValueError
+#     except Exception:
+#         rot_ff = face_forward.copy()
+#         shoulder_deg = np.nan
+#     rigid = rotational(rot_ff, face_3d, scale=True, translate=True)
+#     eul = _rotation_matrix_to_euler(rigid.t)
+#     return eul, shoulder_deg
+
 def _get_head_angle(pose_row: pd.DataFrame, face_forward: np.ndarray, face_3d: np.ndarray):
     cols = [
         ("left_shoulder", "x"), ("left_shoulder", "y"),
@@ -443,8 +465,9 @@ def _get_head_angle(pose_row: pd.DataFrame, face_forward: np.ndarray, face_3d: n
             dx = (pose_row[cols[0]] - pose_row[cols[2]]).astype(float).iat[0]
             dy = (pose_row[cols[1]] - pose_row[cols[3]]).astype(float).iat[0]
             ang = -np.arctan2(dy, dx)
-            R2 = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
-            rot_ff = np.hstack([face_forward[:, :2] @ R2, face_forward[:, 2:]])
+            #R2 = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
+            #rot_ff = np.hstack([face_forward[:, :2] @ R2, face_forward[:, 2:]])
+            rot_ff = np.hstack([face_forward[:, :2], face_forward[:, 2:]])
             shoulder_deg = np.rad2deg(ang)
         else:
             raise ValueError
